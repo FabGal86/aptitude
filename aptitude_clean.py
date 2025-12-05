@@ -596,11 +596,12 @@ Significato campi:
   sono chiamate telefoniche strutturate verso/da clienti:
   call center, contact center, customer service telefonico, help desk telefonico,
   telemarketing, telesales, phone collections, inbound/outbound calls, ecc.
-  NON considerare come "has_phone_contact" il solo uso occasionale del telefono (es. chiamate sporadiche a fornitori).
+  NON considerare come "has_phone_contact" il solo uso occasionale del telefono
+  (es. chiamate sporadiche a fornitori).
 
   Tuttavia, nel testo di "ai_support" devi TENERE CONTO anche di eventuale
-  ESPERIENZA TELEFONICA MINIMA o occasionale (es. gestione telefonate clienti in negozio, richiami sporadici,
-  telefonate di conferma appuntamenti), specificando chiaramente se è:
+  ESPERIENZA TELEFONICA MINIMA o occasionale (es. gestione telefonate clienti in negozio,
+  richiami sporadici, telefonate di conferma appuntamenti), specificando chiaramente se è:
   - assente,
   - solo minima/occasionale,
   - oppure strutturata in contesto call/contact center.
@@ -620,8 +621,8 @@ Significato campi:
 - "profile_keywords": esattamente 3 stringhe brevi (max 3 parole ciascuna) che descrivono
   il profilo del candidato in modo sintetico, ad esempio combinando:
   tipo di esperienza con il pubblico, eventuale esperienza telefonica,
-  e livello di competenze digitali (esempi: "Retail customer service", "Esperienza barista", "Basic IT skills",
-  "Contact center experience", "Hospitality front office", ecc.).
+  e livello di competenze digitali (esempi: "Retail customer service", "Esperienza barista",
+  "Basic IT skills", "Contact center experience", "Hospitality front office", ecc.).
 
 - "ai_support": breve giudizio sintetico in italiano sull'adeguatezza a lavorare in un call center,
   che verrà mostrato nella colonna "AI Screening".
@@ -635,11 +636,12 @@ Regole per "public_roles" e "phone_roles":
 
 Regole per "ai_support":
 - La risposta deve contenere ESATTAMENTE 2 frasi.
-- La PRIMA frase deve iniziare con UNA di queste forme esatte:
-  - "Sì,"
-  - "No,"
-  - "Probabilmente sì,"
-  - "Probabilmente no,"
+- NON iniziare nessuna delle due frasi con "Sì", "Si", "No", "Probabilmente sì",
+  "Probabilmente no" o varianti.
+- Non usare mai la parola "Parzialmente" in nessuna forma
+  e NON usare parole come "adeguato", "adeguata", "adeguati", "adeguate",
+  "non adeguato", "non adeguata", "non adeguati", "non adeguate".
+
 - Nella PRIMA frase esprimi il giudizio complessivo di adeguatezza
   tenendo conto di:
   - presenza/assenza di esperienza telefonica strutturata con clienti,
@@ -647,20 +649,18 @@ Regole per "ai_support":
   - presenza/assenza di esperienza di contatto diretto con il pubblico,
   - presenza/assenza di competenze informatiche di base.
 
-- NON usare mai la parola "Parzialmente" in nessuna forma
-  e NON usare parole come "adeguato", "adeguata", "adeguati", "adeguate",
-  "non adeguato", "non adeguata", "non adeguati", "non adeguate".
-
 - La SECONDA frase deve spiegare in modo più analitico il perché (almeno 12 parole),
   e deve SEMPRE specificare in modo esplicito TUTTI questi elementi:
   1) se l'esperienza telefonica è assente, minima/occasionale o strutturata (usa espressioni come
-     "nessuna esperienza telefonica", "solo esperienza telefonica minima/occasionale", "esperienza telefonica strutturata");
-  2) se esiste esperienza a contatto col pubblico e in quali contesti (es. retail, horeca, hospitality, sportello, eventi);
-  3) se sono presenti o meno competenze informatiche di base (Office, Google Suite, strumenti di videoconferenza,
-     CRM o ticketing);
-  4) un breve commento su soft skills rilevanti (es. gestione reclami, vendita, ascolto, relazione col cliente).
+     "nessuna esperienza telefonica", "solo esperienza telefonica minima/occasionale",
+     "esperienza telefonica strutturata");
+  2) se esiste esperienza a contatto col pubblico e in quali contesti (es. retail, horeca,
+     hospitality, sportello, eventi);
+  3) se sono presenti o meno competenze informatiche di base (Office, Google Suite,
+     strumenti di videoconferenza, CRM o ticketing);
+  4) un breve commento su soft skills rilevanti (es. gestione reclami, vendita, ascolto,
+     relazione col cliente).
 
-- Non citare esplicitamente etichette tipo "Adeguato", "Parzialmente adeguato", "Non adeguato" o varianti.
 - Ogni frase deve terminare con un punto.
 - Non usare puntini di sospensione.
 - Non aggiungere nessun testo fuori dall'oggetto JSON.
@@ -999,6 +999,7 @@ if uploaded_files and groq_client is not None:
             hide_index=True,
             use_container_width=True,
             height=400,
+            num_rows="fixed",  # nessuna riga vuota aggiuntiva
             column_config={
                 "Read": st.column_config.LinkColumn(
                     "Read",
@@ -1024,5 +1025,3 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
-
-
