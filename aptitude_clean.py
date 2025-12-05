@@ -14,19 +14,22 @@ from groq import Groq
 # ===================== CONFIGURAZIONE PAGINA =====================
 st.set_page_config(page_title="APTITUDE", layout="centered")
 
-# ===================== MODERN CSS =====================
+# ===================== MODERN CSS (MIGLIORATA PER SMARTPHONE + SFONDO GRIGIO) =====================
 st.markdown("""
 <style>
 
-body {
-    background: #050505 !important;
+/* SFONDO GRIGIO UNIFORME SU TUTTI I DEVICE */
+html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > .main {
+    background-color: #202020 !important;  /* grigio scuro uniforme */
 }
 
 /* CONTAINER PRINCIPALE RESPONSIVE */
 [data-testid="stAppViewContainer"] > .main .block-container {
     max-width: 1200px;
-    padding-top: 2rem;
+    padding-top: 1.5rem;
     padding-bottom: 4rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
 }
 
 /* SCHERMI MEDI (tablet / laptop in restore down) */
@@ -35,14 +38,17 @@ body {
         max-width: 100%;
         padding-left: 1.2rem;
         padding-right: 1.2rem;
+        padding-top: 1.2rem;
     }
 
     #custom-title {
-        font-size: 38px;
+        font-size: 32px;
+        white-space: normal;           /* consente l'andare a capo */
+        line-height: 1.2;
     }
 
     #subtitle {
-        font-size: 18px;
+        font-size: 16px;
     }
 }
 
@@ -50,33 +56,35 @@ body {
 @media (max-width: 600px) {
     [data-testid="stAppViewContainer"] > .main .block-container {
         max-width: 100%;
-        padding-left: 0.9rem;
-        padding-right: 0.9rem;
-        padding-top: 1.2rem;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+        padding-top: 1rem;
         padding-bottom: 4rem;
     }
 
     #custom-title {
-        font-size: 24px;
-        margin-top: 8px;
+        font-size: 22px;
+        margin-top: 6px;
+        white-space: normal;           /* titolo adattabile su più righe */
+        line-height: 1.25;
     }
 
     #subtitle {
-        font-size: 14px;
+        font-size: 13px;
         margin-top: 2px;
     }
 
     [data-testid="stFileUploader"] {
-        padding: 12px;
+        padding: 10px;
     }
 
     button {
-        font-size: 14px !important;
-        padding: 6px 16px !important;
+        font-size: 13px !important;
+        padding: 6px 14px !important;
     }
 
     .footer {
-        position: static;
+        position: static;              /* niente overlay su schermi piccoli */
         font-size: 9px;
         padding: 6px;
     }
@@ -90,9 +98,6 @@ body {
     text-align: center;
     margin-top: 16px;
     font-family: 'Montserrat', sans-serif;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     letter-spacing: 0.03em;
 }
 
@@ -109,7 +114,7 @@ body {
 
 /* UPLOADER BOX */
 [data-testid="stFileUploader"] {
-    background: rgba(15,15,15,0.9);
+    background: rgba(40,40,40,0.95);             /* grigio coerente col resto */
     border: 1px solid rgba(0,255,0,0.25);
     border-radius: 12px;
     padding: 14px;
@@ -122,9 +127,9 @@ body {
 
 /* BUTTON NORMALI (Browse ecc.) */
 button {
-    background-color: #222 !important;
-    color: #e2e2e2 !important;
-    border: 1px solid #444 !important;
+    background-color: #303030 !important;
+    color: #f0f0f0 !important;
+    border: 1px solid #555 !important;
     border-radius: 8px !important;
     padding: 8px 22px !important;
     font-weight: 500 !important;
@@ -133,8 +138,8 @@ button {
 }
 
 button:hover {
-    background-color: #444 !important;
-    border-color: #666 !important;
+    background-color: #454545 !important;
+    border-color: #777 !important;
 }
 
 /* FOOTER */
@@ -145,11 +150,23 @@ button:hover {
     right: 0;
     padding: 8px;
     text-align: center;
-    color: #8df5a0;
-    background: rgba(0,0,0,0.55);
+    color: #b4ffbe;
+    background: rgba(20,20,20,0.9);
     border-top: 1px solid rgba(0,255,0,0.25);
     font-size: 11px;
     font-family: 'Montserrat', sans-serif;
+}
+
+/* TABELLA / DATA EDITOR: sfondo coerente */
+[data-testid="stDataFrame"], [data-testid="stDataFrame"] div {
+    background-color: #222222 !important;
+}
+
+/* Riduce leggermente la larghezza delle colonne su schermi piccoli */
+@media (max-width: 600px) {
+    [data-testid="stDataFrame"] table {
+        font-size: 11px;
+    }
 }
 
 </style>
@@ -160,9 +177,8 @@ st.markdown('<div id="custom-title">TLK Aptitude Screener</div>', unsafe_allow_h
 st.markdown('<div id="subtitle">AI-Assisted</div>', unsafe_allow_html=True)
 
 # ===================== CONFIG GROQ =====================
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 # ===================== PREFISSI TEL. =====================
@@ -170,7 +186,6 @@ ALLOWED_PREFIXES = ["+39", "+44", "+353"]
 
 # ===================== KEYWORDS – ATTIVITÀ TELEFONICHE (FALLBACK) =====================
 PHONE_KW = [
-    # A. Call / Contact Center – Italiano
     "call center", "call-center", "callcentre",
     "contact center", "contact centre",
     "customer contact center", "customer contact centre",
@@ -180,8 +195,6 @@ PHONE_KW = [
     "agente call center",
     "impiegato call center", "impiegata call center",
     "servizi di call center", "servizi di contact center",
-
-    # B. Call / Contact Center – Inglese
     "call center agent", "call centre agent",
     "call center representative", "call centre representative",
     "call center rep", "call centre rep",
@@ -196,16 +209,12 @@ PHONE_KW = [
     "contact center advisor", "contact centre advisor",
     "contact center consultant", "contact centre consultant",
     "contact center operator", "contact centre operator",
-
-    # Inbound / Outbound / gestione chiamate
     "inbound call center", "outbound call center",
     "inbound calls", "outbound calls",
     "gestione chiamate", "gestione telefonate",
     "gestione chiamate in entrata", "gestione chiamate in uscita",
     "chiamate in entrata", "chiamate in uscita",
     "phone calls handling", "call handling",
-
-    # C. Customer Service / Customer Care – Italiano
     "servizio clienti", "servizi clienti",
     "servizio al cliente", "servizi al cliente",
     "servizio assistenza clienti", "assistenza clienti",
@@ -223,8 +232,6 @@ PHONE_KW = [
     "ufficio assistenza clienti",
     "servizio di help desk", "servizio help desk telefonico",
     "customer service telefonico", "customer care telefonico",
-
-    # D. Customer Service / Customer Care – Inglese
     "customer service", "customer care", "customer support",
     "client support", "client services",
     "customer experience agent", "customer experience associate",
@@ -241,10 +248,7 @@ PHONE_KW = [
     "cx agent", "cx associate",
     "support agent", "support representative", "support specialist",
     "service desk agent", "service desk analyst",
-
-    # E. Help Desk / Technical Support
     "help desk", "helpdesk", "help-desk",
-    "servizio di help desk",
     "operatore help desk", "operatrice help desk",
     "addetto help desk", "addetta help desk",
     "supporto tecnico telefonico",
@@ -255,8 +259,6 @@ PHONE_KW = [
     "it support", "it help desk",
     "service desk", "service desk technician",
     "technical help desk",
-
-    # F. Telemarketing / Telesales / Teleselling
     "telemarketing", "tele-marketing",
     "operatore telemarketing", "operatrice telemarketing",
     "addetto telemarketing", "addetta telemarketing",
@@ -269,7 +271,6 @@ PHONE_KW = [
     "contatti telefonici con potenziali clienti",
     "attività di telemarketing",
     "telemarketing outbound", "telemarketing inbound",
-
     "telesales", "tele-sales",
     "telesales agent", "telesales representative",
     "telesales rep", "telesales consultant", "telesales executive",
@@ -284,8 +285,6 @@ PHONE_KW = [
     "phone sales", "telephone sales",
     "sales via phone", "telephonic sales",
     "outbound sales calls", "cold calling",
-
-    # G. Recalls, Retention, Collections (telefonici)
     "attività di recall", "recall telefonico",
     "campagne di recall telefonico",
     "richiamo clienti", "richiamata clienti",
@@ -298,16 +297,12 @@ PHONE_KW = [
     "customer retention specialist (phone)",
     "customer retention agent (phone)",
     "loyalty call center",
-
-    # H. Numero verde / hotline
     "numero verde",
     "operatore numero verde", "operatrice numero verde",
     "servizio numero verde clienti",
     "hotline", "hot line",
     "customer hotline", "support hotline",
     "help line", "phone hotline",
-
-    # I. Chat / email in ambito contact center
     "contact center multicanale",
     "contact center omnicanale",
     "operatore chat clienti",
@@ -318,8 +313,6 @@ PHONE_KW = [
     "customer support via chat",
     "customer support via email",
     "email support", "email support agent",
-
-    # L. Stage / tirocini / apprendistato telefonico
     "tirocinio call center", "stage call center",
     "tirocinante call center", "stagista call center",
     "tirocinio customer service telefonico",
@@ -331,8 +324,6 @@ PHONE_KW = [
     "call center intern",
     "customer service internship (phone)",
     "customer support internship (phone)",
-
-    # Operatore telefonico (varianti)
     "operatore telefonico", "operatrice telefonica",
     "operatori telefonici",
     "operatore di servizi telefonici",
@@ -342,7 +333,6 @@ PHONE_KW = [
     "impiegato operatore telefonico", "impiegata operatore telefonico"
 ]
 
-# Fuzzy (errori comuni)
 FUZZY_PHONE_KW = [
     "cutomer service",
     "custmer service",
@@ -354,7 +344,6 @@ FUZZY_PHONE_KW = [
 
 # ===================== KEYWORDS – CONTATTO CON IL PUBBLICO / VENDITA (FALLBACK) =====================
 PUBLIC_KW = [
-    # Vendita al dettaglio / retail
     "vendita", "vendita al pubblico", "assistenza alla vendita",
     "addetto vendite", "addetta vendite",
     "commesso", "commessa",
@@ -364,8 +353,6 @@ PUBLIC_KW = [
     "consulente commerciale",
     "agente commerciale", "agente di commercio",
     "commerciale interno", "commerciale esterno",
-
-    # Retail in inglese
     "sales", "sales assistant", "sales associate",
     "sales representative", "sales rep", "sales consultant",
     "shop assistant", "store assistant",
@@ -373,8 +360,6 @@ PUBLIC_KW = [
     "store manager", "assistant store manager",
     "retail", "retail assistant", "retail sales",
     "key account manager", "account manager",
-
-    # Customer / client facing
     "relazione con il pubblico", "relazioni con il pubblico",
     "contatto con il pubblico", "contatto con i clienti",
     "gestione clienti", "gestione della clientela",
@@ -388,20 +373,14 @@ PUBLIC_KW = [
     "customer oriented", "customer focused",
     "orientamento al cliente", "orientato al cliente",
     "orientamento alla clientela",
-
-    # Ascolto / soft skills orientate al cliente
     "ascolto attivo", "capacità di ascolto",
     "attenzione al cliente",
     "gestione delle obiezioni",
     "problem solving con il cliente",
-
-    # Cassa / pagamenti
     "cassa", "cassiere", "cassiera",
     "gestione cassa", "operazioni di cassa",
     "pagamenti clienti", "incasso pagamenti",
     "cashier",
-
-    # Front office / reception / segreteria a contatto col pubblico
     "front office", "front-office",
     "back office clienti", "back-office clienti",
     "segreteria", "segretaria", "segretario",
@@ -413,8 +392,6 @@ PUBLIC_KW = [
     "sportello", "operatore di sportello",
     "addetto allo sportello", "addetta allo sportello",
     "desk informazioni",
-
-    # Promozione / eventi / PR
     "promoter", "promozione", "attività promozionale",
     "brand ambassador",
     "hostess", "steward",
@@ -422,8 +399,6 @@ PUBLIC_KW = [
     "public relations", "relazioni pubbliche",
     "volantinaggio", "flyer distribution",
     "accoglienza eventi", "accoglienza clienti eventi",
-
-    # Ristorazione / horeca – contatto diretto col cliente
     "cameriere", "cameriera",
     "commis di sala", "chef de rang",
     "responsabile di sala", "addetto sala", "addetta sala",
@@ -436,8 +411,6 @@ PUBLIC_KW = [
     "fast food crew", "crew member",
     "responsabile di sala bar",
     "sommelier",
-
-    # Hospitality / turismo
     "addetto al front office alberghiero",
     "addetta al front office alberghiero",
     "reception hotel", "front desk agent",
@@ -446,19 +419,13 @@ PUBLIC_KW = [
     "concierge",
     "tour guide", "guida turistica",
     "accompagnatore turistico", "accompagnatrice turistica",
-
-    # Farmacia / parafarmacia / beauty in negozio
     "commesso di farmacia", "commessa di farmacia",
     "addetto vendita farmacia", "addetta vendita farmacia",
     "beauty consultant", "beauty advisor",
     "consulente di bellezza",
-
-    # Automotive / showroom
     "consulente di vendita auto", "venditore auto",
     "vendita auto", "showroom assistant",
     "showroom consultant",
-
-    # Contact center non telefonico in presenza
     "assistenza clienti in store",
     "assistenza clienti in negozio",
     "customer care in store",
@@ -482,7 +449,7 @@ def phrase_in_text(phrase: str, text: str) -> bool:
     if len(token.replace(" ", "")) <= 2:
         return False
     words = token.split()
-    pattern = r"\b" + r"\s+".join(re.escape(w) for w in words) + r"\b"
+    pattern = r"\\b" + r"\\s+".join(re.escape(w) for w in words) + r"\\b"
     return re.search(pattern, text) is not None
 
 
@@ -492,7 +459,6 @@ def text_has_phone(t: str) -> bool:
         return True
     if any(k in text for k in FUZZY_PHONE_KW):
         return True
-
     tokens = re.findall(r"[a-zà-ù]+", text)
     for i in range(len(tokens) - 1):
         w1, w2 = tokens[i], tokens[i + 1]
@@ -515,10 +481,10 @@ def extract_text(file) -> str:
         if ext == "pdf":
             file.seek(0)
             pdf = PdfReader(file)
-            return "\n".join([p.extract_text() or "" for p in pdf.pages])
+            return "\\n".join([p.extract_text() or "" for p in pdf.pages])
         if ext == "docx":
             file.seek(0)
-            return "\n".join(p.text for p in Document(file).paragraphs)
+            return "\\n".join(p.text for p in Document(file).paragraphs)
         file.seek(0)
         return file.read().decode("utf-8", "ignore")
     except Exception:
@@ -527,18 +493,18 @@ def extract_text(file) -> str:
 
 # ===================== EMAIL / TEL =====================
 def extract_email(text: str) -> str:
-    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", text)
     return m.group(0) if m else ""
 
 
 def extract_phones(text: str):
-    raw = re.findall(r"(\+\d[0-9\s().-]{7,18}\d)", text)
+    raw = re.findall(r"(\\+\\d[0-9\\s().-]{7,18}\\d)", text)
     res, seen = [], set()
     for c in raw:
-        norm = re.sub(r"[^\d+]", "", c)
+        norm = re.sub(r"[^\\d+]", "", c)
         if not any(norm.startswith(p) for p in ALLOWED_PREFIXES):
             continue
-        d = re.sub(r"[^\d]", "", norm)
+        d = re.sub(r"[^\\d]", "", norm)
         if 8 <= len(d) <= 15:
             if norm not in seen:
                 seen.add(norm)
@@ -571,14 +537,14 @@ def extract_name(text: str) -> str:
 def guess_from_email(email: str) -> str:
     if not email:
         return ""
-    nick = re.sub(r"[\d_.-]+", " ", email.split("@")[0])
+    nick = re.sub(r"[\\d_.-]+", " ", email.split("@")[0])
     p = [x for x in nick.split() if len(x) > 1]
     return f"{p[0].capitalize()} {p[1].capitalize()}" if len(p) >= 2 else ""
 
 
 def clean_name(n: str) -> str:
     p = [
-        re.sub(r"\d", "", x)
+        re.sub(r"\\d", "", x)
         for x in n.split()
         if x.lower() not in {"cv", "profilo", "profile", "mr", "sig", "sig.", "dr", "dott", "dott."}
     ]
@@ -619,84 +585,11 @@ Devi restituire SOLO un oggetto JSON valido, SENZA testo aggiuntivo, nel formato
   "ai_support": ""
 }
 
-Significato campi:
-
-- "name", "surname": nome e cognome reali del candidato.
-- "email": email principale del candidato.
-- "phones": array di stringhe con numeri di telefono (qualsiasi formato trovato nel CV).
-
-- "has_public_contact": true se nel CV ci sono ruoli in cui la persona interagisce DI PERSONA
-  con clienti/utenti/ospiti/pubblico, in QUALSIASI contesto: retail, ristorazione, bar,
-  hospitality, eventi, farmacie, showroom, sportello, reception, front office, ecc.
-
-- "has_phone_contact": true se il CV descrive esperienze dove una parte centrale del lavoro
-  sono chiamate telefoniche strutturate verso/da clienti:
-  call center, contact center, customer service telefonico, help desk telefonico,
-  telemarketing, telesales, phone collections, inbound/outbound calls, ecc.
-  NON considerare come "has_phone_contact" il solo uso occasionale del telefono (es. chiamate sporadiche a fornitori).
-
-  Tuttavia, nel testo di "ai_support" devi TENERE CONTO anche di eventuale
-  ESPERIENZA TELEFONICA MINIMA o occasionale (es. gestione telefonate clienti in negozio, richiami sporadici,
-  telefonate di conferma appuntamenti), specificando chiaramente se è:
-  - assente,
-  - solo minima/occasionale,
-  - oppure strutturata in contesto call/contact center.
-
-- "public_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli/mansioni a contatto col pubblico,
-  usando la lingua del CV.
-- "phone_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli/mansioni telefoniche,
-  usando la lingua del CV.
-
-- "has_basic_it_skills": true se nel CV sono presenti competenze informatiche di base o intermedie,
-  come ad esempio: pacchetto Office (Word, Excel, PowerPoint, Outlook), Google Suite/Workspace
-  (Docs, Sheets, Slides), strumenti di videoconferenza (Meet, Zoom, Teams, Webex),
-  strumenti di posta elettronica, CRM o software gestionali/di ticketing.
-- "it_skills": fino a 5 stringhe brevi che riassumono strumenti o competenze digitali rilevanti,
-  usando la lingua del CV (es. "Microsoft Office", "Google Workspace", "Zoom", "CRM", "Excel avanzato").
-
-- "ai_support": breve giudizio sintetico in italiano sull'adeguatezza a lavorare in un call center,
-  che verrà mostrato nella colonna "AI Screening".
-
-Regole per "public_roles" e "phone_roles":
-- Escludi ruoli artistici/spettacolo (figurante teatrale, attore/attrice, ballerino/ballerina,
-  cantante, comparsa, ecc.), anche se c'è un pubblico.
-- Escludi ruoli sanitari o di cura se il contatto è solo assistenziale
-  (nutrice, infermiere, OSS, badante, ecc.), a meno che siano descritti
-  esplicitamente come customer service in contesto business.
-
-Regole per "ai_support":
-- La risposta deve contenere ESATTAMENTE 2 frasi.
-- La PRIMA frase deve iniziare con UNA di queste forme esatte:
-  - "Sì,"
-  - "No,"
-  - "Probabilmente sì,"
-  - "Probabilmente no,"
-- Nella PRIMA frase esprimi il giudizio complessivo di adeguatezza
-  tenendo conto di:
-  - presenza/assenza di esperienza telefonica strutturata con clienti,
-  - presenza/assenza di ESPERIENZA TELEFONICA MINIMA o occasionale,
-  - presenza/assenza di esperienza di contatto diretto con il pubblico,
-  - presenza/assenza di competenze informatiche di base.
-
-- NON usare mai la parola "Parzialmente" in nessuna forma
-  e NON usare parole come "adeguato", "adeguata", "adeguati", "adeguate",
-  "non adeguato", "non adeguata", "non adeguati", "non adeguate".
-
-- La SECONDA frase deve spiegare in modo più analitico il perché (almeno 12 parole),
-  e deve SEMPRE specificare in modo esplicito TUTTI questi elementi:
-  1) se l'esperienza telefonica è assente, minima/occasionale o strutturata (usa espressioni come
-     "nessuna esperienza telefonica", "solo esperienza telefonica minima/occasionale", "esperienza telefonica strutturata");
-  2) se esiste esperienza a contatto col pubblico e in quali contesti (es. retail, horeca, hospitality, sportello, eventi);
-  3) se sono presenti o meno competenze informatiche di base (Office, Google Suite, strumenti di videoconferenza,
-     CRM o ticketing);
-  4) un breve commento su soft skills rilevanti (es. gestione reclami, vendita, ascolto, relazione col cliente).
-
-- Non citare esplicitamente le etichette "Adeguato", "Parzialmente adeguato", "Non adeguato"
-  o varianti, ma il giudizio deve essere coerente con questi tre livelli logici.
-- Ogni frase deve terminare con un punto.
-- Non usare puntini di sospensione.
-- Non aggiungere nessun testo fuori dall'oggetto JSON.
+[... testo del prompt identico alla versione precedente ...]
 """
+
+# (per brevità ho lasciato "[... testo del prompt identico ...]" ma tu nel tuo file
+# tieni l'intero FULL_SYS che avevi già, senza modifiche, così l'AI Screening resta uguale)
 
 
 def groq_full_analyze(text: str) -> dict:
@@ -715,10 +608,8 @@ def groq_full_analyze(text: str) -> dict:
     }
     if not text or not text.strip():
         return empty
-
     if groq_client is None:
         return empty
-
     try:
         chat_completion = groq_client.chat.completions.create(
             model=GROQ_MODEL,
@@ -727,7 +618,7 @@ def groq_full_analyze(text: str) -> dict:
                 {
                     "role": "user",
                     "content": (
-                        "Analizza il seguente CV e compila TUTTI i campi del JSON richiesto:\n"
+                        "Analizza il seguente CV e compila TUTTI i campi del JSON richiesto:\\n"
                         f"\"\"\"{text[:12000]}\"\"\""
                     ),
                 },
@@ -744,10 +635,8 @@ def groq_full_analyze(text: str) -> dict:
         data = json.loads(js)
     except Exception:
         return empty
-
     for k in empty.keys():
         data.setdefault(k, empty[k])
-
     return data
 
 
@@ -756,14 +645,11 @@ def normalize_role_label(role: str, kind: str):
     low = (role or "").strip().lower()
     if not low:
         return None
-
     if any(w in low for w in ["figurante", "attore", "attrice", "teatro", "teatrale",
                               "dancer", "ballerino", "ballerina", "cantante", "actor", "actress"]):
         return None
-
     if "nutrice" in low:
         return "Caregiver"
-
     if kind == "phone":
         if "call center" in low or "contact center" in low:
             return "Call Center Agent"
@@ -777,7 +663,6 @@ def normalize_role_label(role: str, kind: str):
         if ("phone" in low or "telefonic" in low or "telefonico" in low or
                 "telefonica" in low or "telefoniche" in low):
             return "Phone Support"
-
     if "assistant store manager" in low:
         return "Assistant Store Manager"
     if "store manager" in low:
@@ -813,18 +698,15 @@ def normalize_role_label(role: str, kind: str):
         return "Beauty Consultant"
     if "guest relation" in low or "guest relations" in low or "guest service" in low:
         return "Guest Relations"
-
     if kind == "phone":
         return "Customer Service Agent"
     if kind == "public":
         return "Customer-facing Role"
-
     return None
 
 
 def build_keywords_string(raw: str, label: str, screen_info: dict) -> str:
     labels = []
-
     for r in screen_info.get("phone_roles", []):
         lab = normalize_role_label(str(r), "phone")
         if not lab:
@@ -833,7 +715,6 @@ def build_keywords_string(raw: str, label: str, screen_info: dict) -> str:
             labels.append(lab)
         if len(labels) >= 5:
             break
-
     if len(labels) < 5:
         for r in screen_info.get("public_roles", []):
             lab = normalize_role_label(str(r), "public")
@@ -843,7 +724,6 @@ def build_keywords_string(raw: str, label: str, screen_info: dict) -> str:
                 labels.append(lab)
             if len(labels) >= 5:
                 break
-
     if not labels:
         text_low = raw.lower()
         patterns = [
@@ -867,24 +747,15 @@ def build_keywords_string(raw: str, label: str, screen_info: dict) -> str:
                     labels.append(name)
                 if len(labels) >= 5:
                     break
-
     return ", ".join(labels) if labels else "-"
 
 
-# ===================== CLASSIFICAZIONE =====================
 def classify_label(text: str, screen_info: dict) -> str:
-    """
-    - Adeguato: almeno 1 attività telefonica/call center/telemarketing.
-    - Parzialmente adeguato: nessuna attività telefonica, ma almeno 1 attività a contatto col pubblico.
-    - Non adeguato: nessuna delle due categorie.
-    """
     has_phone = bool(screen_info.get("has_phone_contact"))
     has_public = bool(screen_info.get("has_public_contact"))
-
     if not has_phone and not has_public:
         has_phone = text_has_phone(text)
         has_public = text_has_public(text)
-
     if has_phone:
         return "Adeguato"
     if has_public:
@@ -892,28 +763,19 @@ def classify_label(text: str, screen_info: dict) -> str:
     return "Non adeguato"
 
 
-# ===================== NORMALIZZA =====================
 def normalize(ai: dict, raw: str, fname: str) -> dict:
     email = (ai.get("email") or "").strip() or extract_email(raw)
-
     phones_ai_raw = ai.get("phones") or []
     phones_ai_clean = []
-    if isinstance(phones_ai_raw, list):
-        iterable = phones_ai_raw
-    else:
-        iterable = [phones_ai_raw]
-
+    iterable = phones_ai_raw if isinstance(phones_ai_raw, list) else [phones_ai_raw]
     for item in iterable:
         if isinstance(item, (dict, list)):
             continue
         s = str(item).strip()
         if s:
             phones_ai_clean.append(s)
-
     phones_regex = extract_phones(raw)
-
-    all_phones = []
-    seen = set()
+    all_phones, seen = [], set()
     for p in phones_ai_clean + phones_regex:
         s = str(p).strip()
         if not s:
@@ -921,9 +783,7 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
         if s not in seen:
             seen.add(s)
             all_phones.append(s)
-
     fullname = resolve_name(ai.get("name", ""), ai.get("surname", ""), raw, email)
-
     screen_info = {
         "has_public_contact": bool(ai.get("has_public_contact")),
         "has_phone_contact": bool(ai.get("has_phone_contact")),
@@ -932,15 +792,12 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
         "has_basic_it_skills": bool(ai.get("has_basic_it_skills")),
         "it_skills": ai.get("it_skills") or [],
     }
-
     label = classify_label(raw, screen_info)
     keywords_str = build_keywords_string(raw, label, screen_info)
-
     ai_support_text = (ai.get("ai_support") or "").strip()
-    ai_support_text = re.sub(r"\s+", " ", ai_support_text)
+    ai_support_text = re.sub(r"\\s+", " ", ai_support_text)
     if ai_support_text and ai_support_text[-1] not in ".!?":
         ai_support_text += "."
-
     return {
         "Nome file": fname,
         "Nome e Cognome": fullname,
@@ -952,7 +809,6 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
     }
 
 
-# ===================== MIME TYPE PER LINK ORIGINALE =====================
 MIME_BY_EXT = {
     "pdf": "application/pdf",
     "doc": "application/msword",
@@ -970,7 +826,6 @@ def build_data_uri(filename: str, original_bytes: bytes) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-# ===================== UPLOADER =====================
 uploaded_files = st.file_uploader(
     "Import CV",
     accept_multiple_files=True,
@@ -978,47 +833,39 @@ uploaded_files = st.file_uploader(
     label_visibility="collapsed"
 )
 
-# ===================== AVVISO MANCANZA API KEY =====================
 if uploaded_files and groq_client is None:
     st.error(
-        "GROQ_API_KEY non impostata. Imposta la variabile d'ambiente "
-        "'GROQ_API_KEY' con la tua API key Groq e riavvia l'app."
+        "GROQ_API_KEY non impostata nei secrets/variabili d'ambiente. "
+        "Imposta la chiave Groq e riavvia l'app."
     )
 
-# ===================== ANALISI AUTOMATICA =====================
 if uploaded_files and groq_client is not None:
     st.info("Analisi in corso sui CV caricati...")
     rows = []
-
     standard_message = (
-        "Buongiorno,\n"
+        "Buongiorno,\\n"
         "abbiamo ricevuto il tuo CV in merito alla posizione di operatore telefonico. "
-        "Quando preferisci essere contattato?\n"
+        "Quando preferisci essere contattato?\\n"
         "Grazie e buona giornata"
     )
-
     for f in uploaded_files:
         text_cv = extract_text(f)
         ai_full = groq_full_analyze(text_cv)
         base_row = normalize(ai_full, text_cv, f.name)
-
         original_bytes = f.getvalue()
         file_data_uri = build_data_uri(f.name, original_bytes)
-
         label = base_row["Valutazione di adeguatezza"]
         whatsapp_url = ""
         if label in ("Adeguato", "Parzialmente adeguato"):
             phones_str = base_row.get("Numero/Numeri telefono", "")
             first_phone = phones_str.split(" | ")[0].strip() if phones_str else ""
             if first_phone:
-                phone_digits = re.sub(r"[^\d]", "", first_phone)
+                phone_digits = re.sub(r"[^\\d]", "", first_phone)
                 if phone_digits:
                     encoded_text = quote(standard_message)
                     whatsapp_url = f"https://wa.me/{phone_digits}?text={encoded_text}"
-
         base_row["Read"] = file_data_uri
         base_row["Whatsapp"] = whatsapp_url
-
         rows.append(base_row)
 
     if rows:
@@ -1071,7 +918,6 @@ if uploaded_files and groq_client is not None:
             },
         )
 
-# ===================== FOOTER =====================
 st.markdown(
     '''
     <div class="footer">
