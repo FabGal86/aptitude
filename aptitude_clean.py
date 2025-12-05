@@ -1,6 +1,5 @@
 import os
 import re
-import io
 import json
 import base64
 import pandas as pd
@@ -14,16 +13,18 @@ from groq import Groq
 # ===================== CONFIGURAZIONE PAGINA =====================
 st.set_page_config(page_title="APTITUDE", layout="centered")
 
-# ===================== MODERN CSS (MIGLIORATA PER SMARTPHONE + SFONDO GRIGIO) =====================
+# ===================== MODERN CSS – RESPONSIVE + SFONDO GRIGIO =====================
 st.markdown("""
 <style>
 
-/* SFONDO GRIGIO UNIFORME SU TUTTI I DEVICE */
-html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > .main {
-    background-color: #202020 !important;  /* grigio scuro uniforme */
+/* SFONDO GRIGIO UNIFORME */
+html, body,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > .main {
+    background-color: #202020 !important;
 }
 
-/* CONTAINER PRINCIPALE RESPONSIVE */
+/* CONTAINER PRINCIPALE */
 [data-testid="stAppViewContainer"] > .main .block-container {
     max-width: 1200px;
     padding-top: 1.5rem;
@@ -32,7 +33,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
     padding-right: 1.5rem;
 }
 
-/* SCHERMI MEDI (tablet / laptop in restore down) */
+/* TABLET / LAPTOP RIDOTTO */
 @media (max-width: 992px) {
     [data-testid="stAppViewContainer"] > .main .block-container {
         max-width: 100%;
@@ -43,7 +44,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
 
     #custom-title {
         font-size: 32px;
-        white-space: normal;           /* consente l'andare a capo */
+        white-space: normal;
         line-height: 1.2;
     }
 
@@ -52,7 +53,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
     }
 }
 
-/* SMARTPHONE / TABLET PICCOLI (~fino a 5.8") */
+/* SMARTPHONE */
 @media (max-width: 600px) {
     [data-testid="stAppViewContainer"] > .main .block-container {
         max-width: 100%;
@@ -65,7 +66,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
     #custom-title {
         font-size: 22px;
         margin-top: 6px;
-        white-space: normal;           /* titolo adattabile su più righe */
+        white-space: normal;
         line-height: 1.25;
     }
 
@@ -84,7 +85,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
     }
 
     .footer {
-        position: static;              /* niente overlay su schermi piccoli */
+        position: static;
         font-size: 9px;
         padding: 6px;
     }
@@ -92,7 +93,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
 
 /* TITOLO */
 #custom-title {
-    color: #00ff00 !important;  /* verde fluo */
+    color: #00ff00 !important;
     font-size: 40px;
     font-weight: 900;
     text-align: center;
@@ -101,7 +102,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
     letter-spacing: 0.03em;
 }
 
-/* SOTTITITOLO */
+/* SOTTOTITOLO */
 #subtitle {
     color: #a0ffb0 !important;
     font-size: 16px;
@@ -114,18 +115,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer
 
 /* UPLOADER BOX */
 [data-testid="stFileUploader"] {
-    background: rgba(40,40,40,0.95);             /* grigio coerente col resto */
+    background: rgba(40,40,40,0.95);
     border: 1px solid rgba(0,255,0,0.25);
     border-radius: 12px;
     padding: 14px;
     box-shadow: 0px 0px 8px rgba(0,255,0,0.18);
 }
-
 [data-testid="stFileUploader"] section {
     background: transparent;
 }
 
-/* BUTTON NORMALI (Browse ecc.) */
+/* BUTTON */
 button {
     background-color: #303030 !important;
     color: #f0f0f0 !important;
@@ -136,13 +136,12 @@ button {
     font-size: 14px !important;
     transition: 0.2s ease-in-out !important;
 }
-
 button:hover {
     background-color: #454545 !important;
     border-color: #777 !important;
 }
 
-/* FOOTER */
+/* FOOTER (desktop/tablet) */
 .footer {
     position: fixed;
     bottom: 0;
@@ -157,12 +156,10 @@ button:hover {
     font-family: 'Montserrat', sans-serif;
 }
 
-/* TABELLA / DATA EDITOR: sfondo coerente */
-[data-testid="stDataFrame"], [data-testid="stDataFrame"] div {
-    background-color: #222222 !important;
+/* Rende la tabella un po' più compatta ma ben visibile */
+[data-testid="stDataFrame"] table {
+    font-size: 13px;
 }
-
-/* Riduce leggermente la larghezza delle colonne su schermi piccoli */
 @media (max-width: 600px) {
     [data-testid="stDataFrame"] table {
         font-size: 11px;
@@ -184,7 +181,7 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 # ===================== PREFISSI TEL. =====================
 ALLOWED_PREFIXES = ["+39", "+44", "+353"]
 
-# ===================== KEYWORDS – ATTIVITÀ TELEFONICHE (FALLBACK) =====================
+# ===================== KEYWORDS (come prima) =====================
 PHONE_KW = [
     "call center", "call-center", "callcentre",
     "contact center", "contact centre",
@@ -342,7 +339,6 @@ FUZZY_PHONE_KW = [
     "custemer service"
 ]
 
-# ===================== KEYWORDS – CONTATTO CON IL PUBBLICO / VENDITA (FALLBACK) =====================
 PUBLIC_KW = [
     "vendita", "vendita al pubblico", "assistenza alla vendita",
     "addetto vendite", "addetta vendite",
@@ -449,7 +445,7 @@ def phrase_in_text(phrase: str, text: str) -> bool:
     if len(token.replace(" ", "")) <= 2:
         return False
     words = token.split()
-    pattern = r"\\b" + r"\\s+".join(re.escape(w) for w in words) + r"\\b"
+    pattern = r"\b" + r"\s+".join(re.escape(w) for w in words) + r"\b"
     return re.search(pattern, text) is not None
 
 
@@ -481,10 +477,10 @@ def extract_text(file) -> str:
         if ext == "pdf":
             file.seek(0)
             pdf = PdfReader(file)
-            return "\\n".join([p.extract_text() or "" for p in pdf.pages])
+            return "\n".join([p.extract_text() or "" for p in pdf.pages])
         if ext == "docx":
             file.seek(0)
-            return "\\n".join(p.text for p in Document(file).paragraphs)
+            return "\n".join(p.text for p in Document(file).paragraphs)
         file.seek(0)
         return file.read().decode("utf-8", "ignore")
     except Exception:
@@ -493,18 +489,18 @@ def extract_text(file) -> str:
 
 # ===================== EMAIL / TEL =====================
 def extract_email(text: str) -> str:
-    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", text)
+    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
     return m.group(0) if m else ""
 
 
 def extract_phones(text: str):
-    raw = re.findall(r"(\\+\\d[0-9\\s().-]{7,18}\\d)", text)
+    raw = re.findall(r"(\+\d[0-9\s().-]{7,18}\d)", text)
     res, seen = [], set()
     for c in raw:
-        norm = re.sub(r"[^\\d+]", "", c)
+        norm = re.sub(r"[^\d+]", "", c)
         if not any(norm.startswith(p) for p in ALLOWED_PREFIXES):
             continue
-        d = re.sub(r"[^\\d]", "", norm)
+        d = re.sub(r"[^\d]", "", norm)
         if 8 <= len(d) <= 15:
             if norm not in seen:
                 seen.add(norm)
@@ -537,14 +533,14 @@ def extract_name(text: str) -> str:
 def guess_from_email(email: str) -> str:
     if not email:
         return ""
-    nick = re.sub(r"[\\d_.-]+", " ", email.split("@")[0])
+    nick = re.sub(r"[\d_.-]+", " ", email.split("@")[0])
     p = [x for x in nick.split() if len(x) > 1]
     return f"{p[0].capitalize()} {p[1].capitalize()}" if len(p) >= 2 else ""
 
 
 def clean_name(n: str) -> str:
     p = [
-        re.sub(r"\\d", "", x)
+        re.sub(r"\d", "", x)
         for x in n.split()
         if x.lower() not in {"cv", "profilo", "profile", "mr", "sig", "sig.", "dr", "dott", "dott."}
     ]
@@ -585,11 +581,83 @@ Devi restituire SOLO un oggetto JSON valido, SENZA testo aggiuntivo, nel formato
   "ai_support": ""
 }
 
-[... testo del prompt identico alla versione precedente ...]
-"""
+Significato campi:
 
-# (per brevità ho lasciato "[... testo del prompt identico ...]" ma tu nel tuo file
-# tieni l'intero FULL_SYS che avevi già, senza modifiche, così l'AI Screening resta uguale)
+- "name", "surname": nome e cognome reali del candidato.
+- "email": email principale del candidato.
+- "phones": array di stringhe con numeri di telefono (qualsiasi formato trovato nel CV).
+
+- "has_public_contact": true se nel CV ci sono ruoli in cui la persona interagisce DI PERSONA
+  con clienti/utenti/ospiti/pubblico, in QUALSIASI contesto: retail, ristorazione, bar,
+  hospitality, eventi, farmacie, showroom, sportello, reception, front office, ecc.
+
+- "has_phone_contact": true se il CV descrive esperienze dove una parte centrale del lavoro
+  sono chiamate telefoniche strutturate verso/da clienti:
+  call center, contact center, customer service telefonico, help desk telefonico,
+  telemarketing, telesales, phone collections, inbound/outbound calls, ecc.
+  NON considerare come "has_phone_contact" il solo uso occasionale del telefono (es. chiamate sporadiche a fornitori).
+
+  Tuttavia, nel testo di "ai_support" devi TENERE CONTO anche di eventuale
+  ESPERIENZA TELEFONICA MINIMA o occasionale (es. gestione telefonate clienti in negozio, richiami sporadici,
+  telefonate di conferma appuntamenti), specificando chiaramente se è:
+  - assente,
+  - solo minima/occasionale,
+  - oppure strutturata in contesto call/contact center.
+
+- "public_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli/mansioni a contatto col pubblico,
+  usando la lingua del CV.
+- "phone_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli/mansioni telefoniche,
+  usando la lingua del CV.
+
+- "has_basic_it_skills": true se nel CV sono presenti competenze informatiche di base o intermedie,
+  come ad esempio: pacchetto Office (Word, Excel, PowerPoint, Outlook), Google Suite/Workspace
+  (Docs, Sheets, Slides), strumenti di videoconferenza (Meet, Zoom, Teams, Webex),
+  strumenti di posta elettronica, CRM o software gestionali/di ticketing.
+- "it_skills": fino a 5 stringhe brevi che riassumono strumenti o competenze digitali rilevanti,
+  usando la lingua del CV (es. "Microsoft Office", "Google Workspace", "Zoom", "CRM", "Excel avanzato").
+
+- "ai_support": breve giudizio sintetico in italiano sull'adeguatezza a lavorare in un call center,
+  che verrà mostrato nella colonna "AI Screening".
+
+Regole per "public_roles" e "phone_roles":
+- Escludi ruoli artistici/spettacolo (figurante teatrale, attore/attrice, ballerino/ballerina,
+  cantante, comparsa, ecc.), anche se c'è un pubblico.
+- Escludi ruoli sanitari o di cura se il contatto è solo assistenziale
+  (nutrice, infermiere, OSS, badante, ecc.), a meno che siano descritti
+  esplicitamente come customer service in contesto business.
+
+Regole per "ai_support":
+- La risposta deve contenere ESATTAMENTE 2 frasi.
+- La PRIMA frase deve iniziare con UNA di queste forme esatte:
+  - "Sì,"
+  - "No,"
+  - "Probabilmente sì,"
+  - "Probabilmente no,"
+- Nella PRIMA frase esprimi il giudizio complessivo di adeguatezza
+  tenendo conto di:
+  - presenza/assenza di esperienza telefonica strutturata con clienti,
+  - presenza/assenza di ESPERIENZA TELEFONICA MINIMA o occasionale,
+  - presenza/assenza di esperienza di contatto diretto con il pubblico,
+  - presenza/assenza di competenze informatiche di base.
+
+- NON usare mai la parola "Parzialmente" in nessuna forma
+  e NON usare parole come "adeguato", "adeguata", "adeguati", "adeguate",
+  "non adeguato", "non adeguata", "non adeguati", "non adeguate".
+
+- La SECONDA frase deve spiegare in modo più analitico il perché (almeno 12 parole),
+  e deve SEMPRE specificare in modo esplicito TUTTI questi elementi:
+  1) se l'esperienza telefonica è assente, minima/occasionale o strutturata (usa espressioni come
+     "nessuna esperienza telefonica", "solo esperienza telefonica minima/occasionale", "esperienza telefonica strutturata");
+  2) se esiste esperienza a contatto col pubblico e in quali contesti (es. retail, horeca, hospitality, sportello, eventi);
+  3) se sono presenti o meno competenze informatiche di base (Office, Google Suite, strumenti di videoconferenza,
+     CRM o ticketing);
+  4) un breve commento su soft skills rilevanti (es. gestione reclami, vendita, ascolto, relazione col cliente).
+
+- Non citare esplicitamente etichette tipo "Adeguato", "Parzialmente adeguato", "Non adeguato" o varianti.
+- Ogni frase deve terminare con un punto.
+- Non usare puntini di sospensione.
+- Non aggiungere nessun testo fuori dall'oggetto JSON.
+"""
 
 
 def groq_full_analyze(text: str) -> dict:
@@ -618,7 +686,7 @@ def groq_full_analyze(text: str) -> dict:
                 {
                     "role": "user",
                     "content": (
-                        "Analizza il seguente CV e compila TUTTI i campi del JSON richiesto:\\n"
+                        "Analizza il seguente CV e compila TUTTI i campi del JSON richiesto:\n"
                         f"\"\"\"{text[:12000]}\"\"\""
                     ),
                 },
@@ -795,7 +863,7 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
     label = classify_label(raw, screen_info)
     keywords_str = build_keywords_string(raw, label, screen_info)
     ai_support_text = (ai.get("ai_support") or "").strip()
-    ai_support_text = re.sub(r"\\s+", " ", ai_support_text)
+    ai_support_text = re.sub(r"\s+", " ", ai_support_text)
     if ai_support_text and ai_support_text[-1] not in ".!?":
         ai_support_text += "."
     return {
@@ -809,6 +877,7 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
     }
 
 
+# ===================== MIME TYPE PER LINK ORIGINALE =====================
 MIME_BY_EXT = {
     "pdf": "application/pdf",
     "doc": "application/msword",
@@ -826,6 +895,7 @@ def build_data_uri(filename: str, original_bytes: bytes) -> str:
     return f"data:{mime};base64,{b64}"
 
 
+# ===================== UPLOADER =====================
 uploaded_files = st.file_uploader(
     "Import CV",
     accept_multiple_files=True,
@@ -833,37 +903,44 @@ uploaded_files = st.file_uploader(
     label_visibility="collapsed"
 )
 
+# ===================== AVVISO MANCANZA API KEY =====================
 if uploaded_files and groq_client is None:
     st.error(
         "GROQ_API_KEY non impostata nei secrets/variabili d'ambiente. "
         "Imposta la chiave Groq e riavvia l'app."
     )
 
+# ===================== ANALISI AUTOMATICA =====================
 if uploaded_files and groq_client is not None:
     st.info("Analisi in corso sui CV caricati...")
     rows = []
+
     standard_message = (
-        "Buongiorno,\\n"
+        "Buongiorno,\n"
         "abbiamo ricevuto il tuo CV in merito alla posizione di operatore telefonico. "
-        "Quando preferisci essere contattato?\\n"
+        "Quando preferisci essere contattato?\n"
         "Grazie e buona giornata"
     )
+
     for f in uploaded_files:
         text_cv = extract_text(f)
         ai_full = groq_full_analyze(text_cv)
         base_row = normalize(ai_full, text_cv, f.name)
+
         original_bytes = f.getvalue()
         file_data_uri = build_data_uri(f.name, original_bytes)
+
         label = base_row["Valutazione di adeguatezza"]
         whatsapp_url = ""
         if label in ("Adeguato", "Parzialmente adeguato"):
             phones_str = base_row.get("Numero/Numeri telefono", "")
             first_phone = phones_str.split(" | ")[0].strip() if phones_str else ""
             if first_phone:
-                phone_digits = re.sub(r"[^\\d]", "", first_phone)
+                phone_digits = re.sub(r"[^\d]", "", first_phone)
                 if phone_digits:
                     encoded_text = quote(standard_message)
                     whatsapp_url = f"https://wa.me/{phone_digits}?text={encoded_text}"
+
         base_row["Read"] = file_data_uri
         base_row["Whatsapp"] = whatsapp_url
         rows.append(base_row)
@@ -902,6 +979,7 @@ if uploaded_files and groq_client is not None:
             df,
             hide_index=True,
             use_container_width=True,
+            height=400,
             column_config={
                 "Read": st.column_config.LinkColumn(
                     "Read",
@@ -918,6 +996,7 @@ if uploaded_files and groq_client is not None:
             },
         )
 
+# ===================== FOOTER =====================
 st.markdown(
     '''
     <div class="footer">
