@@ -994,12 +994,19 @@ if uploaded_files and groq_client is not None:
 
         st.success("Analisi completata.")
 
+        # Altezza dinamica: solo lo spazio necessario per le righe presenti
+        n_rows = len(df)
+        header_h = 40
+        row_h = 32
+        padding = 24
+        table_height = min(600, header_h + n_rows * row_h + padding)
+
         st.data_editor(
             df,
             hide_index=True,
             use_container_width=True,
-            height=400,
-            num_rows="fixed",  # nessuna riga vuota aggiuntiva
+            height=table_height,
+            num_rows="fixed",  # nessuna riga vuota aggiuntiva modificabile
             column_config={
                 "Read": st.column_config.LinkColumn(
                     "Read",
