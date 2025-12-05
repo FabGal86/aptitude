@@ -578,6 +578,7 @@ Devi restituire SOLO un oggetto JSON valido, SENZA testo aggiuntivo, nel formato
   "phone_roles": [],
   "has_basic_it_skills": false,
   "it_skills": [],
+  "profile_keywords": [],
   "ai_support": ""
 }
 
@@ -615,6 +616,12 @@ Significato campi:
   strumenti di posta elettronica, CRM o software gestionali/di ticketing.
 - "it_skills": fino a 5 stringhe brevi che riassumono strumenti o competenze digitali rilevanti,
   usando la lingua del CV (es. "Microsoft Office", "Google Workspace", "Zoom", "CRM", "Excel avanzato").
+
+- "profile_keywords": esattamente 3 stringhe brevi (max 3 parole ciascuna) che descrivono
+  il profilo del candidato in modo sintetico, ad esempio combinando:
+  tipo di esperienza con il pubblico, eventuale esperienza telefonica,
+  e livello di competenze digitali (esempi: "Retail customer service", "Esperienza barista", "Basic IT skills",
+  "Contact center experience", "Hospitality front office", ecc.).
 
 - "ai_support": breve giudizio sintetico in italiano sull'adeguatezza a lavorare in un call center,
   che verrà mostrato nella colonna "AI Screening".
@@ -672,6 +679,7 @@ def groq_full_analyze(text: str) -> dict:
         "phone_roles": [],
         "has_basic_it_skills": False,
         "it_skills": [],
+        "profile_keywords": [],
         "ai_support": "",
     }
     if not text or not text.strip():
@@ -860,8 +868,19 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
         "has_basic_it_skills": bool(ai.get("has_basic_it_skills")),
         "it_skills": ai.get("it_skills") or [],
     }
+
+    # Keywords: prima usa le 3 profile_keywords dell'AI, altrimenti fallback precedente
+    pk_raw = ai.get("profile_keywords") or []
+    if isinstance(pk_raw, list):
+        pk_clean = [str(x).strip() for x in pk_raw if str(x).strip()]
+    else:
+        pk_clean = [str(pk_raw).strip()] if str(pk_raw).strip() else []
+    if pk_clean:
+        keywords_str = ", ".join(pk_clean[:3])
+    else:
+        keywords_str = build_keywords_string(raw, "", screen_info)
+
     label = classify_label(raw, screen_info)
-    keywords_str = build_keywords_string(raw, label, screen_info)
     ai_support_text = (ai.get("ai_support") or "").strip()
     ai_support_text = re.sub(r"\s+", " ", ai_support_text)
     if ai_support_text and ai_support_text[-1] not in ".!?":
@@ -1005,3 +1024,5 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
+
