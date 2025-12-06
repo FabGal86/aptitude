@@ -1,5 +1,6 @@
 import os
 import re
+import io
 import json
 import base64
 import tempfile
@@ -11,11 +12,29 @@ from difflib import SequenceMatcher
 from urllib.parse import quote
 from groq import Groq
 
-# tentativo conversione DOCX -> PDF (se disponibile)
+# ===================== OCR / CONVERSIONE =====================
+try:
+    from pdf2image import convert_from_bytes
+except ImportError:
+    convert_from_bytes = None
+
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
+
 try:
     from docx2pdf import convert as docx2pdf_convert
 except ImportError:
     docx2pdf_convert = None
+
+# Configurazione opzionale percorso Tesseract (es. per Windows)
+if pytesseract is not None:
+    tess_cmd = os.getenv("TESSERACT_CMD", "").strip()
+    if tess_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tess_cmd
+
+OCR_AVAILABLE = convert_from_bytes is not None and pytesseract is not None
 
 # ===================== CONFIGURAZIONE PAGINA =====================
 st.set_page_config(page_title="APTITUDE", layout="centered")
@@ -132,11 +151,11 @@ html, body,
     background: transparent;
 }
 
-/* BUTTON */
+/* BUTTON – verde generico */
 button {
-    background-color: #303030 !important;
+    background-color: #198754 !important;
     color: #f0f0f0 !important;
-    border: 1px solid #555 !important;
+    border: 1px solid #198754 !important;
     border-radius: 8px !important;
     padding: 8px 22px !important;
     font-weight: 500 !important;
@@ -144,8 +163,8 @@ button {
     transition: 0.2s ease-in-out !important;
 }
 button:hover {
-    background-color: #454545 !important;
-    border-color: #777 !important;
+    background-color: #157347 !important;
+    border-color: #146c43 !important;
 }
 
 /* FOOTER (desktop/tablet) */
@@ -179,6 +198,15 @@ button:hover {
 # ===================== HEADER =====================
 st.markdown('<div id="custom-title">TLK Aptitude Screener</div>', unsafe_allow_html=True)
 st.markdown('<div id="subtitle">AI-Assisted</div>', unsafe_allow_html=True)
+
+# ===================== AVVISO OCR =====================
+if not OCR_AVAILABLE:
+    st.warning(
+        "OCR non disponibile: per leggere PDF scannerizzati installa le librerie "
+        "'pdf2image', 'pytesseract' e i programmi Tesseract OCR + Poppler. "
+        "Opzionale: imposta la variabile d'ambiente TESSERACT_CMD con il percorso "
+        "di tesseract.exe su Windows."
+    )
 
 # ===================== CONFIG GROQ =====================
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -479,20 +507,55 @@ def text_has_public(t: str) -> bool:
     return any(phrase_in_text(k, text) for k in PUBLIC_KW)
 
 
-# ===================== LETTURA FILE =====================
-def extract_text(file) -> str:
+# ===================== LETTURA FILE + OCR =====================
+def ocr_pdf_bytes(data: bytes) -> str:
+    if not OCR_AVAILABLE or not data:
+        return ""
+    try:
+        images = convert_from_bytes(data)
+        texts = []
+        for img in images:
+            txt = pytesseract.image_to_string(img)
+            if txt:
+                texts.append(txt)
+        return "\n".join(texts)
+    except Exception:
+        return ""
+
+
+def extract_text(file, original_bytes: bytes = None) -> str:
     ext = file.name.split(".")[-1].lower()
+    if original_bytes is None:
+        try:
+            original_bytes = file.getvalue()
+        except Exception:
+            original_bytes = None
     try:
         if ext == "pdf":
-            file.seek(0)
-            pdf = PdfReader(file)
-            return "\n".join([p.extract_text() or "" for p in pdf.pages])
+            text = ""
+            if original_bytes is not None:
+                reader = PdfReader(io.BytesIO(original_bytes))
+            else:
+                file.seek(0)
+                reader = PdfReader(file)
+            pages_text = []
+            for p in reader.pages:
+                t = p.extract_text() or ""
+                pages_text.append(t)
+            text = "\n".join(pages_text)
+            if text.strip():
+                return text
+            if original_bytes is not None:
+                return ocr_pdf_bytes(original_bytes)
+            return ""
         if ext == "docx":
             file.seek(0)
             return "\n".join(p.text for p in Document(file).paragraphs)
         file.seek(0)
         return file.read().decode("utf-8", "ignore")
     except Exception:
+        if ext == "pdf" and original_bytes:
+            return ocr_pdf_bytes(original_bytes)
         return ""
 
 
@@ -832,19 +895,16 @@ def classify_label(text: str, screen_info: dict) -> str:
     has_public = bool(screen_info.get("has_public_contact"))
     has_it = bool(screen_info.get("has_basic_it_skills"))
 
-    # rinforzo: usiamo sempre anche i pattern locali
     if not has_phone:
         has_phone = text_has_phone(text)
     if not has_public:
         has_public = text_has_public(text)
 
-    # se appare "customer service" o simili, garantiamo almeno PARZIALMENTE ADEGUATO
     cs_like = text_has_phone(text) or text_has_public(text)
 
     if has_it and has_phone:
         return "Adatto"
     if cs_like or has_public or has_phone:
-        # qualunque customer service / contatto pubblico => almeno parzialmente
         return "Parzialmente adatto"
     return "Non adatto"
 
@@ -901,8 +961,6 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
     else:
         keywords_str = build_keywords_string(raw, screen_info)
 
-    # etichetta SEMPRE calcolata localmente, così "customer service" / errori ortografici
-    # portano almeno a "Parzialmente adatto"
     label = classify_label(raw, screen_info)
     score = label_to_score(label)
 
@@ -917,8 +975,8 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
     return {
         "Nome file": fname,
         "Nome e Cognome": fullname,
-        "Valutazione di adeguatezza": score,        # 0 / 50 / 100
-        "Classe adeguatezza": label,               # Adatto / Parzialmente / Non
+        "Valutazione di adeguatezza": score,
+        "Classe adeguatezza": label,
         "Keywords": keywords_str,
         "AI Assisted": ai_summary_text,
         "AI Screening": ai_support_text,
@@ -954,6 +1012,10 @@ def build_pdf_data_uri(filename: str, original_bytes: bytes) -> str:
     return f"data:application/pdf;base64,{b64}"
 
 
+# ===================== STATO AVVISO NON LETTURA =====================
+if "hide_unreadable_info" not in st.session_state:
+    st.session_state["hide_unreadable_info"] = False
+
 # ===================== UPLOADER =====================
 uploaded_files = st.file_uploader(
     "Import CV",
@@ -971,8 +1033,12 @@ if uploaded_files and groq_client is None:
 
 # ===================== ANALISI AUTOMATICA =====================
 if uploaded_files and groq_client is not None:
-    st.info("Analisi in corso sui CV caricati...")
+    # placeholder per poter rimuovere il messaggio "analisi in corso"
+    status_box = st.empty()
+    status_box.info("Analisi in corso sui CV caricati...")
+
     rows = []
+    unreadable_files = []
 
     standard_message = (
         "Buongiorno,\n"
@@ -982,11 +1048,17 @@ if uploaded_files and groq_client is not None:
     )
 
     for f in uploaded_files:
-        text_cv = extract_text(f)
+        original_bytes = f.getvalue()
+        text_cv = extract_text(f, original_bytes)
+
+        # se il testo è vuoto anche dopo OCR => CV non letto
+        if not text_cv or not text_cv.strip():
+            unreadable_files.append(f.name)
+            continue
+
         ai_full = groq_full_analyze(text_cv)
         base_row = normalize(ai_full, text_cv, f.name)
 
-        original_bytes = f.getvalue()
         pdf_data_uri = build_pdf_data_uri(f.name, original_bytes)
 
         label = base_row["Classe adeguatezza"]
@@ -1004,6 +1076,29 @@ if uploaded_files and groq_client is not None:
         base_row["Whatsapp"] = whatsapp_url
         rows.append(base_row)
 
+    # rimuove il box "Analisi in corso..."
+    status_box.empty()
+    # mantiene il riquadro verde di analisi completata
+    st.success("Analisi completata.")
+
+    # INFO in riquadro rosso per CV non letti (senza testo "RED FLAG")
+    if unreadable_files and not st.session_state["hide_unreadable_info"]:
+        with st.container():
+            st.markdown(
+                """
+                <div style="border:1px solid #ff4b4b;padding:12px;border-radius:8px;background:rgba(80,0,0,0.4);">
+                  <div style="color:#ffdddd;font-size:12px;margin-bottom:6px;">
+                    Attenzione: alcuni CV non sono stati letti correttamente
+                    (PDF solo immagini o formati non supportati) e non sono stati analizzati.
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.write(", ".join(unreadable_files))
+            if st.button("OK", key="close_unreadable_info"):
+                st.session_state["hide_unreadable_info"] = True
+
     if rows:
         df = pd.DataFrame(rows)
 
@@ -1019,7 +1114,7 @@ if uploaded_files and groq_client is not None:
                 return ""
             df["E-Mail"] = df["E-Mail"].apply(make_mailto)
 
-        # ordine colonne: ultime 3 a destra = Numero, Whatsapp, E-Mail
+        # ultime tre colonne a destra: Numero, WhatsApp, E-Mail
         desired_cols = [
             "Nome file",
             "Nome e Cognome",
@@ -1034,8 +1129,6 @@ if uploaded_files and groq_client is not None:
             "E-Mail",
         ]
         df = df[[c for c in desired_cols if c in df.columns]]
-
-        st.success("Analisi completata.")
 
         n_rows = len(df)
         header_h = 40
@@ -1084,5 +1177,7 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
+
 
 
