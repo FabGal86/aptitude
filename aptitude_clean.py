@@ -181,7 +181,7 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 # ===================== PREFISSI TEL. =====================
 ALLOWED_PREFIXES = ["+39", "+44", "+353"]
 
-# ===================== KEYWORDS (come prima) =====================
+# ===================== KEYWORDS (come prima, per eventuali fallback) =====================
 PHONE_KW = [
     "call center", "call-center", "callcentre",
     "contact center", "contact centre",
@@ -487,7 +487,7 @@ def extract_text(file) -> str:
         return ""
 
 
-# ===================== EMAIL / TEL =====================
+# ===================== EMAIL / TEL (fallback) =====================
 def extract_email(text: str) -> str:
     m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
     return m.group(0) if m else ""
@@ -508,7 +508,7 @@ def extract_phones(text: str):
     return res
 
 
-# ===================== NAME EXTRACTION =====================
+# ===================== NAME EXTRACTION (fallback) =====================
 def extract_name(text: str) -> str:
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     bad_tokens = [
@@ -561,9 +561,13 @@ def resolve_name(ai_n: str, ai_s: str, text: str, email: str) -> str:
 # ===================== GROQ – PROMPT =====================
 FULL_SYS = """
 Sei un sistema che estrae dati strutturati da CV in italiano, inglese, spagnolo o tedesco
-e valuta l'adeguatezza per ruoli di call center / contact center / customer service telefonico,
-tenendo conto di QUALSIASI esperienza di contatto con il pubblico
-e della presenza o assenza di competenze informatiche di base.
+e valuta l'adeguatezza per ruoli di call center / contact center / customer service telefonico.
+
+ATTENZIONE AI CONTATTI:
+Nel 99% dei casi Nome e Cognome, Numero di telefono cellulare ed E-mail
+sono riportati nella PRIMA PAGINA del CV, di solito nella PRIMA META'
+(intestazione o riquadro dati personali). Usa questa informazione per
+identificarli in modo affidabile.
 
 Devi restituire SOLO un oggetto JSON valido, SENZA testo aggiuntivo, nel formato:
 
@@ -579,91 +583,76 @@ Devi restituire SOLO un oggetto JSON valido, SENZA testo aggiuntivo, nel formato
   "has_basic_it_skills": false,
   "it_skills": [],
   "profile_keywords": [],
+  "ai_summary": "",
+  "suitability_label": "",
   "ai_support": ""
 }
 
-Significato campi:
+Significato campi principali:
 
-- "name", "surname": nome e cognome reali del candidato.
-- "email": email principale del candidato.
-- "phones": array di stringhe con numeri di telefono (qualsiasi formato trovato nel CV).
+- "name", "surname": nome e cognome reali del candidato, recuperati dai dati iniziali del CV.
+- "email": email principale del candidato (preferisci quella indicata nei dati personali in alto).
+- "phones": array di stringhe con i numeri di telefono, dando priorità al NUMERO DI CELLULARE.
 
-- "has_public_contact": true se nel CV ci sono ruoli in cui la persona interagisce DI PERSONA
-  con clienti/utenti/ospiti/pubblico, in QUALSIASI contesto: retail, ristorazione, bar,
-  hospitality, eventi, farmacie, showroom, sportello, reception, front office, ecc.
-
-- "has_phone_contact": true se il CV descrive esperienze dove una parte centrale del lavoro
+- "has_public_contact": true se ci sono ruoli con contatto diretto col pubblico/cliente
+  in presenza (retail, ristorazione, bar, hospitality, eventi, showroom, sportello, reception, ecc.).
+- "has_phone_contact": true se ci sono esperienze dove una parte centrale del lavoro
   sono chiamate telefoniche strutturate verso/da clienti:
   call center, contact center, customer service telefonico, help desk telefonico,
   telemarketing, telesales, phone collections, inbound/outbound calls, ecc.
-  NON considerare come "has_phone_contact" il solo uso occasionale del telefono
-  (es. chiamate sporadiche a fornitori).
+  NON considerare come esperienza telefonica strutturata l'uso solo occasionale del telefono.
 
-  Tuttavia, nel testo di "ai_support" devi TENERE CONTO anche di eventuale
-  ESPERIENZA TELEFONICA MINIMA o occasionale (es. gestione telefonate clienti in negozio,
-  richiami sporadici, telefonate di conferma appuntamenti), specificando chiaramente se è:
-  - assente,
-  - solo minima/occasionale,
-  - oppure strutturata in contesto call/contact center.
-
-- "public_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli/mansioni a contatto col pubblico,
+- "public_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli a contatto col pubblico,
   usando la lingua del CV.
-- "phone_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli/mansioni telefoniche,
+- "phone_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli telefonici strutturati,
   usando la lingua del CV.
 
-- "has_basic_it_skills": true se nel CV sono presenti competenze informatiche di base o intermedie,
-  come ad esempio: pacchetto Office (Word, Excel, PowerPoint, Outlook), Google Suite/Workspace
-  (Docs, Sheets, Slides), strumenti di videoconferenza (Meet, Zoom, Teams, Webex),
-  strumenti di posta elettronica, CRM o software gestionali/di ticketing.
-- "it_skills": fino a 5 stringhe brevi che riassumono strumenti o competenze digitali rilevanti,
-  usando la lingua del CV (es. "Microsoft Office", "Google Workspace", "Zoom", "CRM", "Excel avanzato").
+- "has_basic_it_skills": true se sono presenti competenze informatiche da ufficio:
+  pacchetto Office (Word, Excel, PowerPoint, Outlook), Google Suite/Workspace (Docs, Sheets, Slides),
+  strumenti di videoconferenza (Meet, Zoom, Teams), posta elettronica, CRM o software gestionali/ticketing.
+- "it_skills": fino a 5 stringhe brevi che riassumono strumenti digitali rilevanti.
 
-- "profile_keywords": esattamente 3 stringhe brevi (max 3 parole ciascuna) che descrivono
-  il profilo del candidato in modo sintetico, ad esempio combinando:
-  tipo di esperienza con il pubblico, eventuale esperienza telefonica,
-  e livello di competenze digitali (esempi: "Retail customer service", "Esperienza barista",
-  "Basic IT skills", "Contact center experience", "Hospitality front office", ecc.).
+- "profile_keywords": esattamente 4 stringhe brevi che rappresentano il profilo,
+  usando keyword o hashtag (es. "#CustomerService", "#Retail", "#OfficeSkills", "#CallCenterExperience").
 
-- "ai_support": breve giudizio sintetico in italiano sull'adeguatezza a lavorare in un call center,
-  che verrà mostrato nella colonna "AI Screening".
+- "ai_summary": riassunto sintetico delle esperienze lavorative, in ITALIANO,
+  composto da ESATTAMENTE 4 RIGHE separate da "\\n".
+  Ogni riga massimo 120 caratteri, focalizzata su attività lavorative e contatto con clienti.
 
-Regole per "public_roles" e "phone_roles":
-- Escludi ruoli artistici/spettacolo (figurante teatrale, attore/attrice, ballerino/ballerina,
-  cantante, comparsa, ecc.), anche se c'è un pubblico.
-- Escludi ruoli sanitari o di cura se il contatto è solo assistenziale
-  (nutrice, infermiere, OSS, badante, ecc.), a meno che siano descritti
-  esplicitamente come customer service in contesto business.
+- "suitability_label": valutazione complessiva di idoneità, deve essere
+  ESATTAMENTE una di queste stringhe:
+  - "Adatto"
+  - "Parzialmente adatto"
+  - "Non adatto"
 
-Regole per "ai_support":
-- La risposta deve contenere ESATTAMENTE 2 frasi.
-- NON iniziare nessuna delle due frasi con "Sì", "Si", "No", "Probabilmente sì",
-  "Probabilmente no" o varianti.
-- Non usare mai la parola "Parzialmente" in nessuna forma
-  e NON usare parole come "adeguato", "adeguata", "adeguati", "adeguate",
-  "non adeguato", "non adeguata", "non adeguati", "non adeguate".
+  Applica SEMPRE queste regole:
 
-- Nella PRIMA frase esprimi il giudizio complessivo di adeguatezza
-  tenendo conto di:
-  - presenza/assenza di esperienza telefonica strutturata con clienti,
-  - presenza/assenza di ESPERIENZA TELEFONICA MINIMA o occasionale,
-  - presenza/assenza di esperienza di contatto diretto con il pubblico,
-  - presenza/assenza di competenze informatiche di base.
+  1) "Non adatto" se NON ci sono competenze informatiche da ufficio
+     (has_basic_it_skills = false) E NON ci sono esperienze telefoniche strutturate
+     di call center/contact center/telemarketing/altre attività telefoniche con clienti
+     (has_phone_contact = false).
 
-- La SECONDA frase deve spiegare in modo più analitico il perché (almeno 12 parole),
-  e deve SEMPRE specificare in modo esplicito TUTTI questi elementi:
-  1) se l'esperienza telefonica è assente, minima/occasionale o strutturata (usa espressioni come
-     "nessuna esperienza telefonica", "solo esperienza telefonica minima/occasionale",
-     "esperienza telefonica strutturata");
-  2) se esiste esperienza a contatto col pubblico e in quali contesti (es. retail, horeca,
-     hospitality, sportello, eventi);
-  3) se sono presenti o meno competenze informatiche di base (Office, Google Suite,
-     strumenti di videoconferenza, CRM o ticketing);
-  4) un breve commento su soft skills rilevanti (es. gestione reclami, vendita, ascolto,
-     relazione col cliente).
+  2) "Adatto" SOLO se ci sono SIA competenze informatiche da ufficio
+     (has_basic_it_skills = true) SIA esperienze telefoniche strutturate con clienti
+     (has_phone_contact = true).
 
-- Ogni frase deve terminare con un punto.
-- Non usare puntini di sospensione.
-- Non aggiungere nessun testo fuori dall'oggetto JSON.
+  3) "Parzialmente adatto" se è presente SOLO UNA delle due variabili:
+     - competenze informatiche da ufficio
+     - oppure esperienze telefoniche strutturate
+     MA a condizione che nel CV esista comunque esperienza di contatto, supporto
+     o servizio al pubblico/cliente (has_public_contact = true).
+
+  4) In tutti gli altri casi, considera "Non adatto".
+
+- "ai_support": breve commento in ITALIANO (2-3 frasi) che spiega perché
+  hai scelto quel valore in "suitability_label", citando:
+  - presenza/assenza di esperienza telefonica strutturata,
+  - presenza/assenza di lavoro a contatto col pubblico,
+  - presenza/assenza di competenze informatiche da ufficio.
+
+Escludi da "public_roles" e "phone_roles" ruoli artistici/spettacolo (attore, attrice, figurante,
+ballerino, cantante, ecc.) e ruoli sanitari/pure assistenziali, a meno che non siano descritti
+esplicitamente come customer service in contesto business.
 """
 
 
@@ -680,6 +669,8 @@ def groq_full_analyze(text: str) -> dict:
         "has_basic_it_skills": False,
         "it_skills": [],
         "profile_keywords": [],
+        "ai_summary": "",
+        "suitability_label": "",
         "ai_support": "",
     }
     if not text or not text.strip():
@@ -687,6 +678,8 @@ def groq_full_analyze(text: str) -> dict:
     if groq_client is None:
         return empty
     try:
+        # Per sicurezza inviamo massimo ~12k caratteri
+        snippet = text[:12000]
         chat_completion = groq_client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[
@@ -695,7 +688,7 @@ def groq_full_analyze(text: str) -> dict:
                     "role": "user",
                     "content": (
                         "Analizza il seguente CV e compila TUTTI i campi del JSON richiesto:\n"
-                        f"\"\"\"{text[:12000]}\"\"\""
+                        f"\"\"\"{snippet}\"\"\""
                     ),
                 },
             ],
@@ -781,7 +774,7 @@ def normalize_role_label(role: str, kind: str):
     return None
 
 
-def build_keywords_string(raw: str, label: str, screen_info: dict) -> str:
+def build_keywords_string(raw: str, screen_info: dict) -> str:
     labels = []
     for r in screen_info.get("phone_roles", []):
         lab = normalize_role_label(str(r), "phone")
@@ -827,20 +820,34 @@ def build_keywords_string(raw: str, label: str, screen_info: dict) -> str:
 
 
 def classify_label(text: str, screen_info: dict) -> str:
+    # Fallback locale nel caso la AI non compili "suitability_label"
     has_phone = bool(screen_info.get("has_phone_contact"))
     has_public = bool(screen_info.get("has_public_contact"))
+    has_it = bool(screen_info.get("has_basic_it_skills"))
     if not has_phone and not has_public:
         has_phone = text_has_phone(text)
         has_public = text_has_public(text)
-    if has_phone:
-        return "Adeguato"
+
+    # Applichiamo le stesse regole date:
+    # 1) Non adatto se NO IT e NO esperienza telefonica strutturata
+    if not has_it and not has_phone:
+        return "Non adatto"
+    # 2) Adatto solo se IT + phone
+    if has_it and has_phone:
+        return "Adatto"
+    # 3) Parzialmente adatto se una sola delle due e ha contatto pubblico
     if has_public:
-        return "Parzialmente adeguato"
-    return "Non adeguato"
+        return "Parzialmente adatto"
+    # 4) altrimenti Non adatto
+    return "Non adatto"
 
 
 def normalize(ai: dict, raw: str, fname: str) -> dict:
-    email = (ai.get("email") or "").strip() or extract_email(raw)
+    # Email: priorità alla AI, poi regex
+    email_ai = (ai.get("email") or "").strip()
+    email = email_ai or extract_email(raw)
+
+    # Telefoni: priorità a quelli AI, poi regex, filtrati per prefissi
     phones_ai_raw = ai.get("phones") or []
     phones_ai_clean = []
     iterable = phones_ai_raw if isinstance(phones_ai_raw, list) else [phones_ai_raw]
@@ -859,7 +866,9 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
         if s not in seen:
             seen.add(s)
             all_phones.append(s)
+
     fullname = resolve_name(ai.get("name", ""), ai.get("surname", ""), raw, email)
+
     screen_info = {
         "has_public_contact": bool(ai.get("has_public_contact")),
         "has_phone_contact": bool(ai.get("has_phone_contact")),
@@ -869,22 +878,33 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
         "it_skills": ai.get("it_skills") or [],
     }
 
-    # Keywords: prima usa le 3 profile_keywords dell'AI, altrimenti fallback precedente
+    # Keywords: 4 keyword/hashtag dalla AI, altrimenti fallback
     pk_raw = ai.get("profile_keywords") or []
     if isinstance(pk_raw, list):
         pk_clean = [str(x).strip() for x in pk_raw if str(x).strip()]
     else:
         pk_clean = [str(pk_raw).strip()] if str(pk_raw).strip() else []
     if pk_clean:
-        keywords_str = ", ".join(pk_clean[:3])
+        keywords_str = ", ".join(pk_clean[:4])
     else:
-        keywords_str = build_keywords_string(raw, "", screen_info)
+        keywords_str = build_keywords_string(raw, screen_info)
 
-    label = classify_label(raw, screen_info)
+    # Label: prima AI, altrimenti fallback con la logica locale
+    label = (ai.get("suitability_label") or "").strip()
+    if label not in ("Adatto", "Parzialmente adatto", "Non adatto"):
+        label = classify_label(raw, screen_info)
+
+    # Riassunto 4 righe attività lavorative
+    ai_summary_text = (ai.get("ai_summary") or "").strip()
+    # Normalizzazione minima: max 4 righe
+    if ai_summary_text:
+        lines = [l.strip() for l in ai_summary_text.splitlines() if l.strip()]
+        ai_summary_text = "\n".join(lines[:4])
+
+    # Commento di supporto decisione AI
     ai_support_text = (ai.get("ai_support") or "").strip()
     ai_support_text = re.sub(r"\s+", " ", ai_support_text)
-    if ai_support_text and ai_support_text[-1] not in ".!?":
-        ai_support_text += "."
+
     return {
         "Nome file": fname,
         "Nome e Cognome": fullname,
@@ -892,6 +912,7 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
         "Numero/Numeri telefono": " | ".join(all_phones),
         "Valutazione di adeguatezza": label,
         "Keywords": keywords_str,
+        "AI Assisted": ai_summary_text,
         "AI Screening": ai_support_text,
     }
 
@@ -951,7 +972,8 @@ if uploaded_files and groq_client is not None:
 
         label = base_row["Valutazione di adeguatezza"]
         whatsapp_url = ""
-        if label in ("Adeguato", "Parzialmente adeguato"):
+        # Contattiamo via WhatsApp solo Adatto / Parzialmente adatto
+        if label in ("Adatto", "Parzialmente adatto"):
             phones_str = base_row.get("Numero/Numeri telefono", "")
             first_phone = phones_str.split(" | ")[0].strip() if phones_str else ""
             if first_phone:
@@ -967,6 +989,7 @@ if uploaded_files and groq_client is not None:
     if rows:
         df = pd.DataFrame(rows)
 
+        # Trasformiamo E-Mail in mailto link con testo standard
         if "E-Mail" in df.columns:
             def make_mailto(x: str) -> str:
                 if isinstance(x, str) and x.strip():
@@ -983,12 +1006,13 @@ if uploaded_files and groq_client is not None:
             "Nome file",
             "Nome e Cognome",
             "Numero/Numeri telefono",
+            "E-Mail",
             "Valutazione di adeguatezza",
             "Keywords",
+            "AI Assisted",
             "AI Screening",
             "Read",
             "Whatsapp",
-            "E-Mail",
         ]
         df = df[[c for c in desired_cols if c in df.columns]]
 
@@ -1006,7 +1030,7 @@ if uploaded_files and groq_client is not None:
             hide_index=True,
             use_container_width=True,
             height=table_height,
-            num_rows="fixed",  # nessuna riga vuota aggiuntiva modificabile
+            num_rows="fixed",
             column_config={
                 "Read": st.column_config.LinkColumn(
                     "Read",
