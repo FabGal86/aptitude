@@ -2,6 +2,7 @@ import os
 import re
 import json
 import base64
+import tempfile
 import pandas as pd
 import streamlit as st
 from PyPDF2 import PdfReader
@@ -9,6 +10,12 @@ from docx import Document
 from difflib import SequenceMatcher
 from urllib.parse import quote
 from groq import Groq
+
+# tentativo conversione DOCX -> PDF (se disponibile)
+try:
+    from docx2pdf import convert as docx2pdf_convert
+except ImportError:
+    docx2pdf_convert = None
 
 # ===================== CONFIGURAZIONE PAGINA =====================
 st.set_page_config(page_title="APTITUDE", layout="centered")
@@ -181,7 +188,7 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 # ===================== PREFISSI TEL. =====================
 ALLOWED_PREFIXES = ["+39", "+44", "+353"]
 
-# ===================== KEYWORDS (come prima, per eventuali fallback) =====================
+# ===================== KEYWORDS (fallback locale) =====================
 PHONE_KW = [
     "call center", "call-center", "callcentre",
     "contact center", "contact centre",
@@ -427,6 +434,8 @@ PUBLIC_KW = [
     "customer care in store",
     "customer care in shop",
     "customer experience in store",
+    "customer service", "customer care",
+    "servizio clienti", "assistenza clienti"
 ]
 
 PHONE_KW = [k.lower() for k in PHONE_KW]
@@ -678,7 +687,6 @@ def groq_full_analyze(text: str) -> dict:
     if groq_client is None:
         return empty
     try:
-        # Per sicurezza inviamo massimo ~12k caratteri
         snippet = text[:12000]
         chat_completion = groq_client.chat.completions.create(
             model=GROQ_MODEL,
@@ -820,34 +828,39 @@ def build_keywords_string(raw: str, screen_info: dict) -> str:
 
 
 def classify_label(text: str, screen_info: dict) -> str:
-    # Fallback locale nel caso la AI non compili "suitability_label"
     has_phone = bool(screen_info.get("has_phone_contact"))
     has_public = bool(screen_info.get("has_public_contact"))
     has_it = bool(screen_info.get("has_basic_it_skills"))
-    if not has_phone and not has_public:
+
+    # rinforzo: usiamo sempre anche i pattern locali
+    if not has_phone:
         has_phone = text_has_phone(text)
+    if not has_public:
         has_public = text_has_public(text)
 
-    # Applichiamo le stesse regole date:
-    # 1) Non adatto se NO IT e NO esperienza telefonica strutturata
-    if not has_it and not has_phone:
-        return "Non adatto"
-    # 2) Adatto solo se IT + phone
+    # se appare "customer service" o simili, garantiamo almeno PARZIALMENTE ADEGUATO
+    cs_like = text_has_phone(text) or text_has_public(text)
+
     if has_it and has_phone:
         return "Adatto"
-    # 3) Parzialmente adatto se una sola delle due e ha contatto pubblico
-    if has_public:
+    if cs_like or has_public or has_phone:
+        # qualunque customer service / contatto pubblico => almeno parzialmente
         return "Parzialmente adatto"
-    # 4) altrimenti Non adatto
     return "Non adatto"
 
 
+def label_to_score(label: str) -> int:
+    if label == "Adatto":
+        return 100
+    if label == "Parzialmente adatto":
+        return 50
+    return 0
+
+
 def normalize(ai: dict, raw: str, fname: str) -> dict:
-    # Email: priorità alla AI, poi regex
     email_ai = (ai.get("email") or "").strip()
     email = email_ai or extract_email(raw)
 
-    # Telefoni: priorità a quelli AI, poi regex, filtrati per prefissi
     phones_ai_raw = ai.get("phones") or []
     phones_ai_clean = []
     iterable = phones_ai_raw if isinstance(phones_ai_raw, list) else [phones_ai_raw]
@@ -878,7 +891,6 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
         "it_skills": ai.get("it_skills") or [],
     }
 
-    # Keywords: 4 keyword/hashtag dalla AI, altrimenti fallback
     pk_raw = ai.get("profile_keywords") or []
     if isinstance(pk_raw, list):
         pk_clean = [str(x).strip() for x in pk_raw if str(x).strip()]
@@ -889,50 +901,57 @@ def normalize(ai: dict, raw: str, fname: str) -> dict:
     else:
         keywords_str = build_keywords_string(raw, screen_info)
 
-    # Label: prima AI, altrimenti fallback con la logica locale
-    label = (ai.get("suitability_label") or "").strip()
-    if label not in ("Adatto", "Parzialmente adatto", "Non adatto"):
-        label = classify_label(raw, screen_info)
+    # etichetta SEMPRE calcolata localmente, così "customer service" / errori ortografici
+    # portano almeno a "Parzialmente adatto"
+    label = classify_label(raw, screen_info)
+    score = label_to_score(label)
 
-    # Riassunto 4 righe attività lavorative
     ai_summary_text = (ai.get("ai_summary") or "").strip()
-    # Normalizzazione minima: max 4 righe
     if ai_summary_text:
         lines = [l.strip() for l in ai_summary_text.splitlines() if l.strip()]
         ai_summary_text = "\n".join(lines[:4])
 
-    # Commento di supporto decisione AI
     ai_support_text = (ai.get("ai_support") or "").strip()
     ai_support_text = re.sub(r"\s+", " ", ai_support_text)
 
     return {
         "Nome file": fname,
         "Nome e Cognome": fullname,
-        "E-Mail": email,
-        "Numero/Numeri telefono": " | ".join(all_phones),
-        "Valutazione di adeguatezza": label,
+        "Valutazione di adeguatezza": score,        # 0 / 50 / 100
+        "Classe adeguatezza": label,               # Adatto / Parzialmente / Non
         "Keywords": keywords_str,
         "AI Assisted": ai_summary_text,
         "AI Screening": ai_support_text,
+        "E-Mail": email,
+        "Numero/Numeri telefono": " | ".join(all_phones),
     }
 
 
-# ===================== MIME TYPE PER LINK ORIGINALE =====================
-MIME_BY_EXT = {
-    "pdf": "application/pdf",
-    "doc": "application/msword",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "odt": "application/vnd.oasis.opendocument.text",
-    "rtf": "application/rtf",
-    "txt": "text/plain",
-}
+# ===================== CONVERSIONE A PDF + DATA URI =====================
+def to_pdf_bytes(original_bytes: bytes, ext: str) -> bytes:
+    ext = (ext or "").lower()
+    if ext == "pdf":
+        return original_bytes
+    if ext == "docx" and docx2pdf_convert is not None:
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                in_path = os.path.join(tmpdir, "input.docx")
+                out_path = os.path.join(tmpdir, "output.pdf")
+                with open(in_path, "wb") as f_in:
+                    f_in.write(original_bytes)
+                docx2pdf_convert(in_path, out_path)
+                with open(out_path, "rb") as f_out:
+                    return f_out.read()
+        except Exception:
+            return original_bytes
+    return original_bytes
 
 
-def build_data_uri(filename: str, original_bytes: bytes) -> str:
+def build_pdf_data_uri(filename: str, original_bytes: bytes) -> str:
     ext = filename.split(".")[-1].lower()
-    mime = MIME_BY_EXT.get(ext, "application/octet-stream")
-    b64 = base64.b64encode(original_bytes).decode("utf-8")
-    return f"data:{mime};base64,{b64}"
+    pdf_bytes = to_pdf_bytes(original_bytes, ext)
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    return f"data:application/pdf;base64,{b64}"
 
 
 # ===================== UPLOADER =====================
@@ -968,11 +987,10 @@ if uploaded_files and groq_client is not None:
         base_row = normalize(ai_full, text_cv, f.name)
 
         original_bytes = f.getvalue()
-        file_data_uri = build_data_uri(f.name, original_bytes)
+        pdf_data_uri = build_pdf_data_uri(f.name, original_bytes)
 
-        label = base_row["Valutazione di adeguatezza"]
+        label = base_row["Classe adeguatezza"]
         whatsapp_url = ""
-        # Contattiamo via WhatsApp solo Adatto / Parzialmente adatto
         if label in ("Adatto", "Parzialmente adatto"):
             phones_str = base_row.get("Numero/Numeri telefono", "")
             first_phone = phones_str.split(" | ")[0].strip() if phones_str else ""
@@ -982,14 +1000,13 @@ if uploaded_files and groq_client is not None:
                     encoded_text = quote(standard_message)
                     whatsapp_url = f"https://wa.me/{phone_digits}?text={encoded_text}"
 
-        base_row["Read"] = file_data_uri
+        base_row["Read"] = pdf_data_uri
         base_row["Whatsapp"] = whatsapp_url
         rows.append(base_row)
 
     if rows:
         df = pd.DataFrame(rows)
 
-        # Trasformiamo E-Mail in mailto link con testo standard
         if "E-Mail" in df.columns:
             def make_mailto(x: str) -> str:
                 if isinstance(x, str) and x.strip():
@@ -1002,23 +1019,24 @@ if uploaded_files and groq_client is not None:
                 return ""
             df["E-Mail"] = df["E-Mail"].apply(make_mailto)
 
+        # ordine colonne: ultime 3 a destra = Numero, Whatsapp, E-Mail
         desired_cols = [
             "Nome file",
             "Nome e Cognome",
-            "Numero/Numeri telefono",
-            "E-Mail",
             "Valutazione di adeguatezza",
+            "Classe adeguatezza",
             "Keywords",
             "AI Assisted",
             "AI Screening",
             "Read",
+            "Numero/Numeri telefono",
             "Whatsapp",
+            "E-Mail",
         ]
         df = df[[c for c in desired_cols if c in df.columns]]
 
         st.success("Analisi completata.")
 
-        # Altezza dinamica: solo lo spazio necessario per le righe presenti
         n_rows = len(df)
         header_h = 40
         row_h = 32
@@ -1032,17 +1050,27 @@ if uploaded_files and groq_client is not None:
             height=table_height,
             num_rows="fixed",
             column_config={
+                "Valutazione di adeguatezza": st.column_config.ProgressColumn(
+                    "Valutazione (%)",
+                    min_value=0,
+                    max_value=100,
+                    format="%d%%",
+                    help="0 = Non adatto, 50 = Parzialmente, 100 = Adatto",
+                ),
                 "Read": st.column_config.LinkColumn(
-                    "Read",
-                    display_text="File"
+                    "PDF",
+                    display_text="PDF",
+                    help="Apri il curriculum in formato PDF"
                 ),
                 "Whatsapp": st.column_config.LinkColumn(
-                    "Whatsapp",
-                    display_text="WhatsApp"
+                    "WhatsApp",
+                    display_text="WhatsApp",
+                    help="Invia un messaggio WhatsApp precompilato"
                 ),
                 "E-Mail": st.column_config.LinkColumn(
-                    "E-Mail",
-                    display_text="E-Mail"
+                    "E-mail",
+                    display_text="E-mail",
+                    help="Invia una e-mail precompilata"
                 ),
             },
         )
@@ -1056,3 +1084,5 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
+
