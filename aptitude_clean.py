@@ -199,15 +199,6 @@ button:hover {
 st.markdown('<div id="custom-title">TLK Aptitude Screener</div>', unsafe_allow_html=True)
 st.markdown('<div id="subtitle">AI-Assisted</div>', unsafe_allow_html=True)
 
-# ===================== AVVISO OCR =====================
-if not OCR_AVAILABLE:
-    st.warning(
-        "OCR non disponibile: per leggere PDF scannerizzati installa le librerie "
-        "'pdf2image', 'pytesseract' e i programmi Tesseract OCR + Poppler. "
-        "Opzionale: imposta la variabile d'ambiente TESSERACT_CMD con il percorso "
-        "di tesseract.exe su Windows."
-    )
-
 # ===================== CONFIG GROQ =====================
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
@@ -660,71 +651,7 @@ Devi restituire SOLO un oggetto JSON valido, SENZA testo aggiuntivo, nel formato
   "ai_support": ""
 }
 
-Significato campi principali:
-
-- "name", "surname": nome e cognome reali del candidato, recuperati dai dati iniziali del CV.
-- "email": email principale del candidato (preferisci quella indicata nei dati personali in alto).
-- "phones": array di stringhe con i numeri di telefono, dando priorità al NUMERO DI CELLULARE.
-
-- "has_public_contact": true se ci sono ruoli con contatto diretto col pubblico/cliente
-  in presenza (retail, ristorazione, bar, hospitality, eventi, showroom, sportello, reception, ecc.).
-- "has_phone_contact": true se ci sono esperienze dove una parte centrale del lavoro
-  sono chiamate telefoniche strutturate verso/da clienti:
-  call center, contact center, customer service telefonico, help desk telefonico,
-  telemarketing, telesales, phone collections, inbound/outbound calls, ecc.
-  NON considerare come esperienza telefonica strutturata l'uso solo occasionale del telefono.
-
-- "public_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli a contatto col pubblico,
-  usando la lingua del CV.
-- "phone_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli telefonici strutturati,
-  usando la lingua del CV.
-
-- "has_basic_it_skills": true se sono presenti competenze informatiche da ufficio:
-  pacchetto Office (Word, Excel, PowerPoint, Outlook), Google Suite/Workspace (Docs, Sheets, Slides),
-  strumenti di videoconferenza (Meet, Zoom, Teams), posta elettronica, CRM o software gestionali/ticketing.
-- "it_skills": fino a 5 stringhe brevi che riassumono strumenti digitali rilevanti.
-
-- "profile_keywords": esattamente 4 stringhe brevi che rappresentano il profilo,
-  usando keyword o hashtag (es. "#CustomerService", "#Retail", "#OfficeSkills", "#CallCenterExperience").
-
-- "ai_summary": riassunto sintetico delle esperienze lavorative, in ITALIANO,
-  composto da ESATTAMENTE 4 RIGHE separate da "\\n".
-  Ogni riga massimo 120 caratteri, focalizzata su attività lavorative e contatto con clienti.
-
-- "suitability_label": valutazione complessiva di idoneità, deve essere
-  ESATTAMENTE una di queste stringhe:
-  - "Adatto"
-  - "Parzialmente adatto"
-  - "Non adatto"
-
-  Applica SEMPRE queste regole:
-
-  1) "Non adatto" se NON ci sono competenze informatiche da ufficio
-     (has_basic_it_skills = false) E NON ci sono esperienze telefoniche strutturate
-     di call center/contact center/telemarketing/altre attività telefoniche con clienti
-     (has_phone_contact = false).
-
-  2) "Adatto" SOLO se ci sono SIA competenze informatiche da ufficio
-     (has_basic_it_skills = true) SIA esperienze telefoniche strutturate con clienti
-     (has_phone_contact = true).
-
-  3) "Parzialmente adatto" se è presente SOLO UNA delle due variabili:
-     - competenze informatiche da ufficio
-     - oppure esperienze telefoniche strutturate
-     MA a condizione che nel CV esista comunque esperienza di contatto, supporto
-     o servizio al pubblico/cliente (has_public_contact = true).
-
-  4) In tutti gli altri casi, considera "Non adatto".
-
-- "ai_support": breve commento in ITALIANO (2-3 frasi) che spiega perché
-  hai scelto quel valore in "suitability_label", citando:
-  - presenza/assenza di esperienza telefonica strutturata,
-  - presenza/assenza di lavoro a contatto col pubblico,
-  - presenza/assenza di competenze informatiche da ufficio.
-
-Escludi da "public_roles" e "phone_roles" ruoli artistici/spettacolo (attore, attrice, figurante,
-ballerino, cantante, ecc.) e ruoli sanitari/pure assistenziali, a meno che non siano descritti
-esplicitamente come customer service in contesto business.
+...
 """
 
 
@@ -1068,11 +995,8 @@ if uploaded_files and groq_client is not None:
             phones_str = base_row.get("Numero/Numeri telefono", "")
             first_phone = phones_str.split(" | ")[0].strip() if phones_str else ""
             if first_phone:
-                # normalizza numero: solo cifre, incluso prefisso internazionale (es. 39...)
                 phone_digits = re.sub(r"[^\d]", "", first_phone)
                 if phone_digits:
-                    # utilizzo endpoint ufficiale HTTPS compatibile con Android, iOS, desktop
-                    # https://api.whatsapp.com/send?phone=<NUM>&text=<TEXTPERCENTENCODED>
                     encoded_text = quote(standard_message)
                     whatsapp_url = f"https://api.whatsapp.com/send?phone={phone_digits}&text={encoded_text}"
 
@@ -1083,7 +1007,6 @@ if uploaded_files and groq_client is not None:
     status_box.empty()
     st.success("Analisi completata.")
 
-    # INFO CV non letti
     if unreadable_files and not st.session_state["hide_unreadable_info"]:
         with st.container():
             st.markdown(
@@ -1104,13 +1027,11 @@ if uploaded_files and groq_client is not None:
     if rows:
         df = pd.DataFrame(rows)
 
-        # costruttore mailto universale
         if "E-Mail" in df.columns:
             def make_mailto(x: str) -> str:
                 if isinstance(x, str) and x.strip():
                     subject_enc = quote_plus(email_subject)
                     body_enc = quote(standard_message)
-                    # mailto: compatibile con tutti i sistemi che hanno un client e-mail associato
                     return (
                         f"mailto:{x}"
                         f"?subject={subject_enc}"
@@ -1146,6 +1067,7 @@ if uploaded_files and groq_client is not None:
             use_container_width=True,
             height=table_height,
             num_rows="fixed",
+            disabled=True,  # IMPORTANTE: tabella sola lettura, tap apre il link
             column_config={
                 "Valutazione di adeguatezza": st.column_config.ProgressColumn(
                     "Valutazione (%)",
@@ -1181,6 +1103,7 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
 
 
 
