@@ -9,7 +9,7 @@ import streamlit as st
 from PyPDF2 import PdfReader
 from docx import Document
 from difflib import SequenceMatcher
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 from groq import Groq
 
 # ===================== OCR / CONVERSIONE =====================
@@ -1024,6 +1024,16 @@ uploaded_files = st.file_uploader(
     label_visibility="collapsed"
 )
 
+# ===================== MESSAGGI STANDARD =====================
+standard_message = (
+    "Buongiorno,\n"
+    "abbiamo ricevuto il tuo CV in merito alla posizione di operatore telefonico. "
+    "Quando preferisci essere contattato?\n"
+    "Grazie e buona giornata"
+)
+
+email_subject = "Selezione per attività operatore telefonico"
+
 # ===================== AVVISO MANCANZA API KEY =====================
 if uploaded_files and groq_client is None:
     st.error(
@@ -1033,25 +1043,16 @@ if uploaded_files and groq_client is None:
 
 # ===================== ANALISI AUTOMATICA =====================
 if uploaded_files and groq_client is not None:
-    # placeholder per poter rimuovere il messaggio "analisi in corso"
     status_box = st.empty()
     status_box.info("Analisi in corso sui CV caricati...")
 
     rows = []
     unreadable_files = []
 
-    standard_message = (
-        "Buongiorno,\n"
-        "abbiamo ricevuto il tuo CV in merito alla posizione di operatore telefonico. "
-        "Quando preferisci essere contattato?\n"
-        "Grazie e buona giornata"
-    )
-
     for f in uploaded_files:
         original_bytes = f.getvalue()
         text_cv = extract_text(f, original_bytes)
 
-        # se il testo è vuoto anche dopo OCR => CV non letto
         if not text_cv or not text_cv.strip():
             unreadable_files.append(f.name)
             continue
@@ -1067,21 +1068,22 @@ if uploaded_files and groq_client is not None:
             phones_str = base_row.get("Numero/Numeri telefono", "")
             first_phone = phones_str.split(" | ")[0].strip() if phones_str else ""
             if first_phone:
+                # normalizza numero: solo cifre, incluso prefisso internazionale (es. 39...)
                 phone_digits = re.sub(r"[^\d]", "", first_phone)
                 if phone_digits:
+                    # utilizzo endpoint ufficiale HTTPS compatibile con Android, iOS, desktop
+                    # https://api.whatsapp.com/send?phone=<NUM>&text=<TEXTPERCENTENCODED>
                     encoded_text = quote(standard_message)
-                    whatsapp_url = f"https://wa.me/{phone_digits}?text={encoded_text}"
+                    whatsapp_url = f"https://api.whatsapp.com/send?phone={phone_digits}&text={encoded_text}"
 
         base_row["Read"] = pdf_data_uri
         base_row["Whatsapp"] = whatsapp_url
         rows.append(base_row)
 
-    # rimuove il box "Analisi in corso..."
     status_box.empty()
-    # mantiene il riquadro verde di analisi completata
     st.success("Analisi completata.")
 
-    # INFO in riquadro rosso per CV non letti (senza testo "RED FLAG")
+    # INFO CV non letti
     if unreadable_files and not st.session_state["hide_unreadable_info"]:
         with st.container():
             st.markdown(
@@ -1102,19 +1104,21 @@ if uploaded_files and groq_client is not None:
     if rows:
         df = pd.DataFrame(rows)
 
+        # costruttore mailto universale
         if "E-Mail" in df.columns:
             def make_mailto(x: str) -> str:
                 if isinstance(x, str) and x.strip():
-                    subject = "Selezione per attività operatore telefonico"
+                    subject_enc = quote_plus(email_subject)
+                    body_enc = quote(standard_message)
+                    # mailto: compatibile con tutti i sistemi che hanno un client e-mail associato
                     return (
                         f"mailto:{x}"
-                        f"?subject={quote(subject)}"
-                        f"&body={quote(standard_message)}"
+                        f"?subject={subject_enc}"
+                        f"&body={body_enc}"
                     )
                 return ""
             df["E-Mail"] = df["E-Mail"].apply(make_mailto)
 
-        # ultime tre colonne a destra: Numero, WhatsApp, E-Mail
         desired_cols = [
             "Nome file",
             "Nome e Cognome",
@@ -1177,6 +1181,8 @@ st.markdown(
     ''',
     unsafe_allow_html=True
 )
+
+
 
 
 
