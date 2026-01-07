@@ -1,9 +1,22 @@
+# TLK Aptitude Screener v2 (con legenda esplicita)
+# - Pipeline a 2 passaggi: EXTRACT (evidence-based) -> SCORE (3 ruoli: inbound/outbound/appointment)
+# - Evidenze testuali auditabili
+# - IT skills estese (Office + CRM + Ticketing + Contact Center)
+# - Telefono: strutturato vs occasionale + inbound/outbound/mixed
+# - Estrazione contatti migliorata (numeri con/senza prefisso, normalizzazione)
+# - UI: legenda chiara, filtri, export CSV, colonne evidenze e confidence
+#
+# Requisiti:
+#   pip install streamlit pandas PyPDF2 python-docx groq pdf2image pytesseract docx2pdf
+
 import os
 import re
 import io
 import json
 import base64
 import tempfile
+from typing import Dict, Any, List, Optional, Tuple
+
 import pandas as pd
 import streamlit as st
 from PyPDF2 import PdfReader
@@ -37,101 +50,36 @@ if pytesseract is not None:
 OCR_AVAILABLE = convert_from_bytes is not None and pytesseract is not None
 
 # ===================== CONFIGURAZIONE PAGINA =====================
-st.set_page_config(page_title="APTITUDE", layout="centered")
+st.set_page_config(page_title="APTITUDE v2", layout="wide")
 
 # ===================== MODERN CSS – RESPONSIVE + SFONDO GRIGIO =====================
-st.markdown("""
+st.markdown(
+    """
 <style>
-
-/* SFONDO GRIGIO UNIFORME */
 html, body,
 [data-testid="stAppViewContainer"],
-[data-testid="stAppViewContainer"] > .main {
-    background-color: #202020 !important;
-}
+[data-testid="stAppViewContainer"] > .main { background-color: #202020 !important; }
 
-/* CONTAINER PRINCIPALE */
 [data-testid="stAppViewContainer"] > .main .block-container {
-    max-width: 1200px;
-    padding-top: 1.5rem;
+    max-width: 1500px;
+    padding-top: 1.0rem;
     padding-bottom: 4rem;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+    padding-left: 1.2rem;
+    padding-right: 1.2rem;
 }
 
-/* TABLET / LAPTOP RIDOTTO */
-@media (max-width: 992px) {
-    [data-testid="stAppViewContainer"] > .main .block-container {
-        max-width: 100%;
-        padding-left: 1.2rem;
-        padding-right: 1.2rem;
-        padding-top: 1.2rem;
-    }
-
-    #custom-title {
-        font-size: 32px;
-        white-space: normal;
-        line-height: 1.2;
-    }
-
-    #subtitle {
-        font-size: 16px;
-    }
-}
-
-/* SMARTPHONE */
-@media (max-width: 600px) {
-    [data-testid="stAppViewContainer"] > .main .block-container {
-        max-width: 100%;
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
-        padding-top: 1rem;
-        padding-bottom: 4rem;
-    }
-
-    #custom-title {
-        font-size: 22px;
-        margin-top: 6px;
-        white-space: normal;
-        line-height: 1.25;
-    }
-
-    #subtitle {
-        font-size: 13px;
-        margin-top: 2px;
-    }
-
-    [data-testid="stFileUploader"] {
-        padding: 10px;
-    }
-
-    button {
-        font-size: 13px !important;
-        padding: 6px 14px !important;
-    }
-
-    .footer {
-        position: static;
-        font-size: 9px;
-        padding: 6px;
-    }
-}
-
-/* TITOLO */
 #custom-title {
     color: #00ff00 !important;
-    font-size: 40px;
+    font-size: 38px;
     font-weight: 900;
     text-align: center;
-    margin-top: 16px;
+    margin-top: 8px;
     font-family: 'Montserrat', sans-serif;
     letter-spacing: 0.03em;
 }
-
-/* SOTTOTITOLO */
 #subtitle {
     color: #a0ffb0 !important;
-    font-size: 16px;
+    font-size: 15px;
     font-style: italic;
     text-align: center;
     margin-top: 3px;
@@ -139,7 +87,6 @@ html, body,
     opacity: 0.9;
 }
 
-/* UPLOADER BOX */
 [data-testid="stFileUploader"] {
     background: rgba(40,40,40,0.95);
     border: 1px solid rgba(0,255,0,0.25);
@@ -147,32 +94,23 @@ html, body,
     padding: 14px;
     box-shadow: 0px 0px 8px rgba(0,255,0,0.18);
 }
-[data-testid="stFileUploader"] section {
-    background: transparent;
-}
+[data-testid="stFileUploader"] section { background: transparent; }
 
-/* BUTTON – verde generico */
 button {
     background-color: #198754 !important;
     color: #f0f0f0 !important;
     border: 1px solid #198754 !important;
     border-radius: 8px !important;
-    padding: 8px 22px !important;
+    padding: 8px 18px !important;
     font-weight: 500 !important;
-    font-size: 14px !important;
+    font-size: 13px !important;
     transition: 0.2s ease-in-out !important;
 }
-button:hover {
-    background-color: #157347 !important;
-    border-color: #146c43 !important;
-}
+button:hover { background-color: #157347 !important; border-color: #146c43 !important; }
 
-/* FOOTER (desktop/tablet) */
 .footer {
     position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    bottom: 0; left: 0; right: 0;
     padding: 8px;
     text-align: center;
     color: #b4ffbe;
@@ -182,381 +120,166 @@ button:hover {
     font-family: 'Montserrat', sans-serif;
 }
 
-/* Rende la tabella un po' più compatta ma ben visibile */
-[data-testid="stDataFrame"] table {
-    font-size: 13px;
-}
-@media (max-width: 600px) {
-    [data-testid="stDataFrame"] table {
-        font-size: 11px;
-    }
-}
-
+.small-note { color: #b4ffbe; opacity: 0.9; font-size: 12px; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ===================== HEADER =====================
 st.markdown('<div id="custom-title">TLK Aptitude Screener</div>', unsafe_allow_html=True)
-st.markdown('<div id="subtitle">AI-Assisted</div>', unsafe_allow_html=True)
+st.markdown('<div id="subtitle">AI-Assisted • v2 (Extract → Score)</div>', unsafe_allow_html=True)
 
 # ===================== CONFIG GROQ =====================
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL_EXTRACT = os.getenv("GROQ_MODEL_EXTRACT", os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"))
+GROQ_MODEL_SCORE = os.getenv("GROQ_MODEL_SCORE", os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"))
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-# ===================== PREFISSI TEL. =====================
-ALLOWED_PREFIXES = ["+39", "+44", "+353"]
+# ===================== CONFIG APP (SIDEBAR) =====================
+with st.sidebar:
+    st.markdown("### Impostazioni")
+    default_cc = st.checkbox(
+        "Preferisci +39 se mancante",
+        value=True,
+        help="Se un numero sembra italiano e non ha prefisso, aggiunge +39 (euristica).",
+    )
+    allowed_prefixes_str = st.text_input(
+        "Prefissi accettati (comma-separated, opzionale)",
+        value="+39,+44,+353",
+        help="Lascia vuoto per accettare tutti i prefissi. Esempio: +39,+41,+33",
+    )
+    min_extract_conf = st.slider("Soglia Confidence estrazione", 0.0, 1.0, 0.35, 0.05)
+    st.markdown("---")
+    show_legend_expanded = st.checkbox("Legenda: apri automaticamente", value=False)
+    show_debug = st.checkbox("Mostra debug JSON (per file)", value=False)
 
-# ===================== KEYWORDS (fallback locale) =====================
-PHONE_KW = [
-    "call center", "call-center", "callcentre",
-    "contact center", "contact centre",
-    "customer contact center", "customer contact centre",
-    "operatore call center", "operatrice call center",
-    "operatore di call center", "operatrice di call center",
-    "addetto call center", "addetta call center",
-    "agente call center",
-    "impiegato call center", "impiegata call center",
-    "servizi di call center", "servizi di contact center",
-    "call center agent", "call centre agent",
-    "call center representative", "call centre representative",
-    "call center rep", "call centre rep",
-    "call center operator", "call centre operator",
-    "call center associate", "call centre associate",
-    "call center specialist", "call centre specialist",
-    "call center advisor", "call centre advisor",
-    "call center consultant", "call centre consultant",
-    "contact center agent", "contact centre agent",
-    "contact center representative", "contact centre representative",
-    "contact center specialist", "contact centre specialist",
-    "contact center advisor", "contact centre advisor",
-    "contact center consultant", "contact centre consultant",
-    "contact center operator", "contact centre operator",
-    "inbound call center", "outbound call center",
-    "inbound calls", "outbound calls",
-    "gestione chiamate", "gestione telefonate",
-    "gestione chiamate in entrata", "gestione chiamate in uscita",
-    "chiamate in entrata", "chiamate in uscita",
-    "phone calls handling", "call handling",
-    "servizio clienti", "servizi clienti",
-    "servizio al cliente", "servizi al cliente",
-    "servizio assistenza clienti", "assistenza clienti",
-    "assistenza al cliente", "assistenza alla clientela",
-    "assistenza post vendita telefonica",
-    "assistenza post-vendita telefonica",
-    "assistenza tecnica telefonica",
-    "supporto clienti", "supporto al cliente",
-    "supporto alla clientela",
-    "assistenza telefonica clienti",
-    "operatore servizio clienti", "operatrice servizio clienti",
-    "addetto servizio clienti", "addetta servizio clienti",
-    "impiegato servizio clienti", "impiegata servizio clienti",
-    "reparto customer service", "ufficio customer service",
-    "ufficio assistenza clienti",
-    "servizio di help desk", "servizio help desk telefonico",
-    "customer service telefonico", "customer care telefonico",
-    "customer service", "customer care", "customer support",
-    "client support", "client services",
-    "customer experience agent", "customer experience associate",
-    "customer experience specialist",
-    "customer success associate", "customer success agent",
-    "customer success representative",
-    "customer service representative", "customer service rep",
-    "customer support representative", "customer support rep",
-    "customer care representative", "customer care rep",
-    "client service representative", "client service rep",
-    "customer operations specialist",
-    "customer operations representative",
-    "customer operations agent",
-    "cx agent", "cx associate",
-    "support agent", "support representative", "support specialist",
-    "service desk agent", "service desk analyst",
-    "help desk", "helpdesk", "help-desk",
-    "operatore help desk", "operatrice help desk",
-    "addetto help desk", "addetta help desk",
-    "supporto tecnico telefonico",
-    "assistenza tecnica telefonica",
-    "assistenza tecnica clienti",
-    "technical support", "technical support specialist",
-    "technical support representative", "technical support agent",
-    "it support", "it help desk",
-    "service desk", "service desk technician",
-    "technical help desk",
-    "telemarketing", "tele-marketing",
-    "operatore telemarketing", "operatrice telemarketing",
-    "addetto telemarketing", "addetta telemarketing",
-    "telemarketing specialist",
-    "telemarketing agent", "telemarketing representative",
-    "telemarketing rep",
-    "telefonate commerciali", "telefonate di vendita",
-    "contatto telefonico con i clienti",
-    "contatti telefonici con i clienti",
-    "contatti telefonici con potenziali clienti",
-    "attività di telemarketing",
-    "telemarketing outbound", "telemarketing inbound",
-    "telesales", "tele-sales",
-    "telesales agent", "telesales representative",
-    "telesales rep", "telesales consultant", "telesales executive",
-    "teleselling", "tele-selling",
-    "operatore teleselling", "operatrice teleselling",
-    "vendita telefonica", "vendite telefoniche",
-    "operatore di vendita telefonica", "operatrice di vendita telefonica",
-    "addetto alle vendite telefoniche", "addetta alle vendite telefoniche",
-    "inside sales (phone)", "inside sales (telefonico)",
-    "inside sales representative (phone)",
-    "inside sales rep (phone)",
-    "phone sales", "telephone sales",
-    "sales via phone", "telephonic sales",
-    "outbound sales calls", "cold calling",
-    "attività di recall", "recall telefonico",
-    "campagne di recall telefonico",
-    "richiamo clienti", "richiamata clienti",
-    "recupero crediti telefonico",
-    "operatore recupero crediti telefonico",
-    "phone collections",
-    "collection agent (phone)",
-    "collection representative (phone)",
-    "retention telefonica clienti",
-    "customer retention specialist (phone)",
-    "customer retention agent (phone)",
-    "loyalty call center",
-    "numero verde",
-    "operatore numero verde", "operatrice numero verde",
-    "servizio numero verde clienti",
-    "hotline", "hot line",
-    "customer hotline", "support hotline",
-    "help line", "phone hotline",
-    "contact center multicanale",
-    "contact center omnicanale",
-    "operatore chat clienti",
-    "chat agent", "live chat agent",
-    "live chat support", "web chat agent",
-    "online chat agent",
-    "chat support representative",
-    "customer support via chat",
-    "customer support via email",
-    "email support", "email support agent",
-    "tirocinio call center", "stage call center",
-    "tirocinante call center", "stagista call center",
-    "tirocinio customer service telefonico",
-    "stage customer service telefonico",
-    "tirocinio in contact center", "stage in contact center",
-    "apprendista operatore call center",
-    "apprendista operatore telefonico",
-    "internship in call center",
-    "call center intern",
-    "customer service internship (phone)",
-    "customer support internship (phone)",
-    "operatore telefonico", "operatrice telefonica",
-    "operatori telefonici",
-    "operatore di servizi telefonici",
-    "operatore telefonico inbound", "operatore telefonico outbound",
-    "operatrice telefonica inbound", "operatrice telefonica outbound",
-    "addetto operatore telefonico", "addetta operatore telefonico",
-    "impiegato operatore telefonico", "impiegata operatore telefonico"
-]
+    st.markdown("---")
+    st.markdown("### Legenda (sintesi)")
+    st.markdown("- **Alta** ≥ 75\n- **Media** 45–74\n- **Bassa** ≤ 44")
+    st.markdown("**Phone structured**: esperienze con inbound/outbound/call center/dialer/script/KPI.")
+    st.markdown("**Confidence estrazione**: affidabilità lettura (PDF testo vs OCR).")
 
-FUZZY_PHONE_KW = [
-    "cutomer service",
-    "custmer service",
-    "costumer service",
-    "custumer service",
-    "customer servce",
-    "custemer service"
-]
+ALLOWED_PREFIXES = [p.strip() for p in allowed_prefixes_str.split(",") if p.strip()]
+ACCEPT_ALL_PREFIXES = len(ALLOWED_PREFIXES) == 0
 
-PUBLIC_KW = [
-    "vendita", "vendita al pubblico", "assistenza alla vendita",
-    "addetto vendite", "addetta vendite",
-    "commesso", "commessa",
-    "reparto vendite",
-    "punto vendita", "negozio",
-    "consulente alle vendite", "consulente di vendita",
-    "consulente commerciale",
-    "agente commerciale", "agente di commercio",
-    "commerciale interno", "commerciale esterno",
-    "sales", "sales assistant", "sales associate",
-    "sales representative", "sales rep", "sales consultant",
-    "shop assistant", "store assistant",
-    "store clerk",
-    "store manager", "assistant store manager",
-    "retail", "retail assistant", "retail sales",
-    "key account manager", "account manager",
-    "relazione con il pubblico", "relazioni con il pubblico",
-    "contatto con il pubblico", "contatto con i clienti",
-    "gestione clienti", "gestione della clientela",
-    "gestione reclami",
-    "assistenza al pubblico",
-    "assistenza clienti in presenza",
-    "assistenza alla clientela",
-    "customer facing", "client facing", "public facing",
-    "customer relations", "customer relationship",
-    "customer relationship management",
-    "customer oriented", "customer focused",
-    "orientamento al cliente", "orientato al cliente",
-    "orientamento alla clientela",
-    "ascolto attivo", "capacità di ascolto",
-    "attenzione al cliente",
-    "gestione delle obiezioni",
-    "problem solving con il cliente",
-    "cassa", "cassiere", "cassiera",
-    "gestione cassa", "operazioni di cassa",
-    "pagamenti clienti", "incasso pagamenti",
-    "cashier",
-    "front office", "front-office",
-    "back office clienti", "back-office clienti",
-    "segreteria", "segretaria", "segretario",
-    "segreteria commerciale", "segreteria organizzativa",
-    "reception", "receptionist",
-    "accoglienza clienti", "accoglienza ospiti",
-    "accoglienza al pubblico",
-    "info point", "info-point", "info desk",
-    "sportello", "operatore di sportello",
-    "addetto allo sportello", "addetta allo sportello",
-    "desk informazioni",
-    "promoter", "promozione", "attività promozionale",
-    "brand ambassador",
-    "hostess", "steward",
-    "hostess di sala", "hostess congressuale",
-    "public relations", "relazioni pubbliche",
-    "volantinaggio", "flyer distribution",
-    "accoglienza eventi", "accoglienza clienti eventi",
-    "cameriere", "cameriera",
-    "commis di sala", "chef de rang",
-    "responsabile di sala", "addetto sala", "addetta sala",
-    "servizio ai tavoli", "servizio in sala",
-    "banconiere", "banconista",
-    "addetto al banco", "addetta al banco",
-    "barista", "barman", "barmaid", "bartender",
-    "responsabile di bar",
-    "addetto ristorazione", "addetta ristorazione",
-    "fast food crew", "crew member",
-    "responsabile di sala bar",
-    "sommelier",
-    "addetto al front office alberghiero",
-    "addetta al front office alberghiero",
-    "reception hotel", "front desk agent",
-    "guest relation", "guest relations",
-    "guest service", "guest services",
-    "concierge",
-    "tour guide", "guida turistica",
-    "accompagnatore turistico", "accompagnatrice turistica",
-    "commesso di farmacia", "commessa di farmacia",
-    "addetto vendita farmacia", "addetta vendita farmacia",
-    "beauty consultant", "beauty advisor",
-    "consulente di bellezza",
-    "consulente di vendita auto", "venditore auto",
-    "vendita auto", "showroom assistant",
-    "showroom consultant",
-    "assistenza clienti in store",
-    "assistenza clienti in negozio",
-    "customer care in store",
-    "customer care in shop",
-    "customer experience in store",
-    "customer service", "customer care",
-    "servizio clienti", "assistenza clienti"
-]
-
-PHONE_KW = [k.lower() for k in PHONE_KW]
-FUZZY_PHONE_KW = [k.lower() for k in FUZZY_PHONE_KW]
-PUBLIC_KW = [k.lower() for k in PUBLIC_KW]
-
-
+# ===================== UTIL =====================
 def _similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
+def safe_json_loads_maybe(content: str) -> Optional[dict]:
+    """Estrae un JSON da testo (gestisce backticks e testo extra)."""
+    if not content:
+        return None
+    s = content.strip()
+    s = re.sub(r"^```(?:json)?\s*", "", s.strip(), flags=re.IGNORECASE)
+    s = re.sub(r"\s*```$", "", s.strip())
+    start = s.find("{")
+    end = s.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    js = s[start : end + 1]
+    js = js.replace("\t", " ")
+    js = re.sub(r",\s*([}\]])", r"\1", js)
+    try:
+        return json.loads(js)
+    except Exception:
+        return None
 
-def phrase_in_text(phrase: str, text: str) -> bool:
-    token = (phrase or "").strip()
-    if not token:
-        return False
-    if len(token.replace(" ", "")) <= 2:
-        return False
-    words = token.split()
-    pattern = r"\b" + r"\s+".join(re.escape(w) for w in words) + r"\b"
-    return re.search(pattern, text) is not None
+def detect_language_hint(text: str) -> str:
+    t = (text or "").lower()
+    if any(w in t for w in ["esperienza", "formazione", "competenze", "lavoro"]):
+        return "it"
+    if any(w in t for w in ["experience", "skills", "education"]):
+        return "en"
+    if any(w in t for w in ["experiencia", "habilidades", "educación"]):
+        return "es"
+    if any(w in t for w in ["erfahrung", "kenntnisse", "ausbildung"]):
+        return "de"
+    return "auto"
 
+# ===================== LEGENDA (UI) =====================
+def render_legend(expanded: bool = False):
+    st.markdown("### Legenda valutazione")
+    st.info(
+        "L’app produce **3 valutazioni separate** (Inbound, Outbound, Presa Appuntamenti). "
+        "Ogni valutazione usa **evidenze testuali** estratte dal CV."
+    )
 
-def text_has_phone(t: str) -> bool:
-    text = t.lower()
-    if any(phrase_in_text(k, text) for k in PHONE_KW):
-        return True
-    if any(k in text for k in FUZZY_PHONE_KW):
-        return True
-    tokens = re.findall(r"[a-zà-ù]+", text)
-    for i in range(len(tokens) - 1):
-        w1, w2 = tokens[i], tokens[i + 1]
-        if _similar(w1, "customer") >= 0.8 and _similar(w2, "service") >= 0.8:
-            return True
-        if _similar(w1, "servizio") >= 0.8 and _similar(w2, "clienti") >= 0.8:
-            return True
-    return False
+    with st.expander("Mostra criteri completi (Score, Label, Phone structured, Confidence)", expanded=expanded):
+        st.markdown(
+            """
+**Output per ciascun ruolo**
+- **Score (0–100)**: punteggio complessivo.
+- **Label**:
+  - **Alta** = score ≥ 75
+  - **Media** = 45–74
+  - **Bassa** = ≤ 44
+- **Reasons**: max 3 motivi sintetici in italiano.
+- **Evidence**: max 3 estratti del CV a supporto (auditabili).
 
+**Phone structured**
+- Conta quante esperienze risultano **telefoniche strutturate** (non uso occasionale del telefono).
+- È “strutturato” se nel CV compaiono segnali come: **inbound/outbound**, call center/contact center, campagne, dialer, script, presa appuntamenti, KPI/target, volumi chiamate.
 
-def text_has_public(t: str) -> bool:
-    text = t.lower()
-    return any(phrase_in_text(k, text) for k in PUBLIC_KW)
+**Phone type**
+- **inbound**: chiamate in entrata / assistenza
+- **outbound**: chiamate in uscita / vendita / appuntamenti
+- **mixed**: entrambe
+- **none**: non emerge telefonico strutturato
 
+**Confidence estrazione (0–1)**
+- **≥ 0.75**: estrazione affidabile (PDF testuale / testo chiaro)
+- **0.45–0.74**: estrazione discreta (formati strani / OCR parziale)
+- **< 0.45**: rischio alto errori (PDF immagine / OCR debole) → verificare manualmente
+"""
+        )
 
-def text_has_basic_it(t: str) -> bool:
-    """
-    True se nel testo compaiono riferimenti a competenze IT di base:
-    pacchetto Office, Word, Excel, PowerPoint, Outlook, Google Docs/Sheets, ecc.
-    """
-    text = t.lower()
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.success("**Alta**: ≥ 75\n\nProfilo forte per il ruolo selezionato.")
+    with c2:
+        st.warning("**Media**: 45–74\n\nProfilo coerente ma con elementi da verificare.")
+    with c3:
+        st.error("**Bassa**: ≤ 44\n\nPoche evidenze o competenze non allineate al ruolo.")
 
-    # pattern multi-parola
-    multi = [
-        "pacchetto office",
-        "microsoft office",
-        "ms office",
-        "office 365",
-        "office365",
-        "google docs",
-        "google documenti",
-        "google sheets",
-        "google fogli",
-        "g suite",
-        "gsuite",
-        "libreoffice",
-        "libre office",
-        "openoffice",
-        "open office",
-    ]
-    if any(p in text for p in multi):
-        return True
-
-    # singole parole con confini di parola
-    for w in ["word", "excel", "powerpoint", "outlook"]:
-        if re.search(r"\b" + re.escape(w) + r"\b", text):
-            return True
-
-    return False
-
+# Mostra legenda centrale (esplicita)
+render_legend(expanded=show_legend_expanded)
 
 # ===================== LETTURA FILE + OCR =====================
-def ocr_pdf_bytes(data: bytes) -> str:
+def ocr_pdf_bytes(data: bytes, max_pages: int = 8) -> Tuple[str, float]:
+    """OCR per PDF immagine. Ritorna (testo, confidence approx)."""
     if not OCR_AVAILABLE or not data:
-        return ""
+        return "", 0.0
     try:
-        images = convert_from_bytes(data)
+        images = convert_from_bytes(data, first_page=1, last_page=max_pages)
         texts = []
+        nonempty = 0
         for img in images:
             txt = pytesseract.image_to_string(img)
+            txt = (txt or "").strip()
             if txt:
+                nonempty += 1
                 texts.append(txt)
-        return "\n".join(texts)
+        if not texts:
+            return "", 0.0
+        conf = min(1.0, 0.25 + 0.1 * nonempty)  # euristica
+        return "\n".join(texts), conf
     except Exception:
-        return ""
+        return "", 0.0
 
-
-def extract_text(file, original_bytes: bytes = None) -> str:
+def extract_text(file, original_bytes: bytes = None) -> Tuple[str, float, str]:
+    """
+    Ritorna (text, confidence, reason).
+    confidence: 1.0 se estrazione testuale ok, 0.4-0.8 se OCR, 0 se fallisce.
+    """
     ext = file.name.split(".")[-1].lower()
     if original_bytes is None:
         try:
             original_bytes = file.getvalue()
         except Exception:
             original_bytes = None
+
     try:
         if ext == "pdf":
             text = ""
@@ -569,53 +292,98 @@ def extract_text(file, original_bytes: bytes = None) -> str:
             for p in reader.pages:
                 t = p.extract_text() or ""
                 pages_text.append(t)
-            text = "\n".join(pages_text)
-            if text.strip():
-                return text
+            text = "\n".join(pages_text).strip()
+            if text:
+                return text, 1.0, "pdf_text"
             if original_bytes is not None:
-                return ocr_pdf_bytes(original_bytes)
-            return ""
+                ocr_text, ocr_conf = ocr_pdf_bytes(original_bytes)
+                return ocr_text.strip(), ocr_conf, "pdf_ocr" if ocr_text.strip() else "pdf_unreadable"
+            return "", 0.0, "pdf_unreadable"
+
         if ext == "docx":
             file.seek(0)
-            return "\n".join(p.text for p in Document(file).paragraphs)
+            txt = "\n".join(p.text for p in Document(file).paragraphs).strip()
+            return txt, (1.0 if txt else 0.0), "docx_text" if txt else "docx_unreadable"
+
+        # DOC/ODT/RTF/TXT: best-effort
         file.seek(0)
-        return file.read().decode("utf-8", "ignore")
+        raw = file.read()
+        try:
+            txt = raw.decode("utf-8", "ignore").strip()
+        except Exception:
+            txt = ""
+        if len(txt) < 200 and ext in ("doc", "odt", "rtf"):
+            return "", 0.0, f"{ext}_unsupported"
+        return txt, (1.0 if txt else 0.0), f"{ext}_text" if txt else f"{ext}_unreadable"
     except Exception:
         if ext == "pdf" and original_bytes:
-            return ocr_pdf_bytes(original_bytes)
-        return ""
+            ocr_text, ocr_conf = ocr_pdf_bytes(original_bytes)
+            return ocr_text.strip(), ocr_conf, "pdf_ocr" if ocr_text.strip() else "pdf_unreadable"
+        return "", 0.0, "extract_error"
 
-
-# ===================== EMAIL / TEL (fallback) =====================
+# ===================== EMAIL / TELEFONI =====================
 def extract_email(text: str) -> str:
-    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+    m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text or "")
     return m.group(0) if m else ""
 
+def normalize_phone_candidate(raw: str) -> str:
+    s = (raw or "").strip()
+    s = re.sub(r"[^\d+]", "", s)
+    s = re.sub(r"^\+{2,}", "+", s)
+    return s
 
-def extract_phones(text: str):
-    raw = re.findall(r"(\+\d[0-9\s().-]{7,18}\d)", text)
-    res, seen = [], set()
-    for c in raw:
-        norm = re.sub(r"[^\d+]", "", c)
-        if not any(norm.startswith(p) for p in ALLOWED_PREFIXES):
+def looks_like_italian_national(num_digits: str) -> bool:
+    return len(num_digits) == 10 and num_digits.startswith("3")
+
+def extract_phones(text: str, prefer_cc39_if_missing: bool = True) -> List[str]:
+    t = text or ""
+    found: List[str] = []
+    seen = set()
+
+    # 1) numeri con +
+    for m in re.findall(r"(\+\d[0-9\s().-]{7,20}\d)", t):
+        cand = normalize_phone_candidate(m)
+        digits = re.sub(r"\D", "", cand)
+        if not digits:
             continue
-        d = re.sub(r"[^\d]", "", norm)
-        if 8 <= len(d) <= 15:
-            if norm not in seen:
-                seen.add(norm)
-                res.append(norm)
-    return res
+        if 8 <= len(digits) <= 15:
+            if not ACCEPT_ALL_PREFIXES and not any(cand.startswith(p) for p in ALLOWED_PREFIXES):
+                continue
+            if cand not in seen:
+                seen.add(cand)
+                found.append(cand)
 
+    # 2) numeri senza + (euristiche)
+    for m in re.findall(r"(?<!\+)(?:\b\d[\d\s().-]{7,20}\d\b)", t):
+        cand = re.sub(r"[^\d]", "", m)
+        if not cand or len(cand) < 9 or len(cand) > 12:
+            continue
+        if len(cand) == 8 and cand.startswith(("19", "20")):
+            continue
+
+        if prefer_cc39_if_missing and looks_like_italian_national(cand):
+            out = "+39" + cand
+        else:
+            out = cand
+
+        if out.startswith("+") and (not ACCEPT_ALL_PREFIXES) and (not any(out.startswith(p) for p in ALLOWED_PREFIXES)):
+            continue
+
+        if out not in seen:
+            seen.add(out)
+            found.append(out)
+
+    return found
 
 # ===================== NAME EXTRACTION (fallback) =====================
-def extract_name(text: str) -> str:
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
+def extract_name_fallback(text: str) -> str:
+    lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
     bad_tokens = [
         "work experience", "esperienza lavorativa", "esperienze lavorative",
         "esperienza professionale", "professional experience",
         "informazioni personali", "dati personali", "personal information",
         "curriculum vitae", "curriculum", "profile", "profilo",
-        "education", "istruzione", "formazione"
+        "education", "istruzione", "formazione",
     ]
     for l in lines[:25]:
         low = l.lower()
@@ -628,7 +396,6 @@ def extract_name(text: str) -> str:
             return l
     return ""
 
-
 def guess_from_email(email: str) -> str:
     if not email:
         return ""
@@ -636,397 +403,342 @@ def guess_from_email(email: str) -> str:
     p = [x for x in nick.split() if len(x) > 1]
     return f"{p[0].capitalize()} {p[1].capitalize()}" if len(p) >= 2 else ""
 
-
 def clean_name(n: str) -> str:
     p = [
         re.sub(r"\d", "", x)
-        for x in n.split()
+        for x in (n or "").split()
         if x.lower() not in {"cv", "profilo", "profile", "mr", "sig", "sig.", "dr", "dott", "dott."}
     ]
     return " ".join(x.capitalize() for x in p[:3]) if len(p) >= 2 else ""
 
-
-def resolve_name(ai_n: str, ai_s: str, text: str, email: str) -> str:
+def resolve_fullname(name: str, surname: str, text: str, email: str) -> str:
     for v in [
-        clean_name(f"{ai_n} {ai_s}".strip()),
-        clean_name(extract_name(text)),
-        clean_name(guess_from_email(email))
+        clean_name(f"{name} {surname}".strip()),
+        clean_name(extract_name_fallback(text)),
+        clean_name(guess_from_email(email)),
     ]:
         if v:
             return v
     return ""
 
+# ===================== KEYWORDS / SIGNALS (deterministici) =====================
+CRM_KW = ["Salesforce", "HubSpot", "Dynamics", "Zoho", "Pipedrive", "SAP CRM", "Oracle CRM", "CRM"]
+TICKETING_KW = ["Zendesk", "Freshdesk", "Jira Service", "ServiceNow", "OTRS", "Ticketing", "Ticket"]
+CC_TOOLS_KW = ["Genesys", "Avaya", "Five9", "Talkdesk", "NICE", "Twilio Flex", "Dialer", "CTI", "VoIP"]
+OFFICE_KW = ["Microsoft Office", "MS Office", "Office 365", "Excel", "Word", "PowerPoint", "Outlook", "Google Sheets", "Google Docs", "Google Workspace", "Teams", "Zoom", "Meet"]
 
-# ===================== GROQ – PROMPT =====================
-FULL_SYS = """
-Sei un sistema che estrae dati strutturati da CV in italiano, inglese, spagnolo o tedesco
-e valuta l'adeguatezza per ruoli di call center / contact center / customer service telefonico.
+INBOUND_KW = ["inbound", "incoming calls", "chiamate in entrata", "assistenza", "supporto", "help desk", "service desk", "customer care"]
+OUTBOUND_KW = ["outbound", "cold calling", "chiamate in uscita", "telemarketing", "telesales", "vendita telefonica", "recall", "presa appuntamenti", "lead qualification"]
+KPI_KW = ["kpi", "target", "obiettivi", "quota", "conversion", "conversione", "chiusure", "appointments", "appuntamenti", "calls/day", "chiamate al giorno"]
 
-ATTENZIONE AI CONTATTI:
-Nel 99% dei casi Nome e Cognome, Numero di telefono cellulare ed E-mail
-sono riportati nella PRIMA PAGINA del CV, di solito nella PRIMA META'
-(intestazione o riquadro dati personali). Usa questa informazione per
-identificarli in modo affidabile.
+def find_snippets(text: str, keywords: List[str], max_snippets: int = 3, window: int = 140) -> List[str]:
+    if not text:
+        return []
+    low = text.lower()
+    snippets: List[str] = []
+    for kw in keywords:
+        k = kw.lower()
+        idx = low.find(k)
+        if idx == -1:
+            continue
+        start = max(0, idx - window)
+        end = min(len(text), idx + len(kw) + window)
+        snip = text[start:end].strip().replace("\n", " ")
+        snip = re.sub(r"\s+", " ", snip)
+        if snip and snip not in snippets:
+            snippets.append(snip[:220])
+        if len(snippets) >= max_snippets:
+            break
+    return snippets
 
-Devi restituire SOLO un oggetto JSON valido, SENZA testo aggiuntivo, nel formato:
+# ===================== GROQ PROMPTS =====================
+EXTRACT_SYS = """
+Sei un sistema di ESTRAZIONE dati da CV (italiano/inglese/spagnolo/tedesco).
+Devi estrarre SOLO informazioni che sono SUPPORTATE dal testo del CV.
+
+Regole:
+- Restituisci SOLO un oggetto JSON valido, SENZA testo extra.
+- Se un dato non è presente nel CV, usa stringa vuota, lista vuota o false.
+- Per ogni affermazione importante (telefono strutturato, strumenti, KPI, vincoli) includi EVIDENZE:
+  brevi estratti dal CV (max 220 caratteri).
+- Non inventare aziende, date, numeri, KPI, strumenti.
+
+Schema JSON:
 
 {
-  "name": "",
-  "surname": "",
-  "email": "",
-  "phones": [],
-  "has_public_contact": false,
-  "has_phone_contact": false,
-  "public_roles": [],
-  "phone_roles": [],
-  "has_basic_it_skills": false,
-  "it_skills": [],
-  "profile_keywords": [],
-  "ai_summary": "",
-  "suitability_label": "",
-  "ai_support": ""
+  "schema_version": "2.0",
+  "candidate": {"name": "", "surname": "", "email": "", "phones": []},
+  "extraction": {"language_hint": "it|en|es|de|auto", "confidence": 0.0, "notes": ""},
+  "experience": [
+    {
+      "role": "",
+      "company": "",
+      "start": "",
+      "end": "",
+      "description": "",
+      "is_phone_structured": false,
+      "phone_type": "inbound|outbound|mixed|none",
+      "channels": ["phone","email","chat"],
+      "tools": [],
+      "kpi_signals": [],
+      "evidence": []
+    }
+  ],
+  "skills": {
+    "office_tools": [],
+    "crm_tools": [],
+    "ticketing_tools": [],
+    "contact_center_tools": [],
+    "languages": [],
+    "other": []
+  },
+  "constraints": [{"type": "", "evidence": ""}]
 }
 
-Significato campi principali:
-
-- "name", "surname": nome e cognome reali del candidato, recuperati dai dati iniziali del CV.
-- "email": email principale del candidato (preferisci quella indicata nei dati personali in alto).
-- "phones": array di stringhe con i numeri di telefono, dando priorità al NUMERO DI CELLULARE.
-
-- "has_public_contact": true se ci sono ruoli con contatto diretto col pubblico/cliente
-  in presenza (retail, ristorazione, bar, hospitality, eventi, showroom, sportello, reception, ecc.).
-- "has_phone_contact": true se ci sono esperienze dove una parte centrale del lavoro
-  sono chiamate telefoniche strutturate verso/da clienti:
-  call center, contact center, customer service telefonico, help desk telefonico,
-  telemarketing, telesales, phone collections, inbound/outbound calls, ecc.
-  NON considerare come esperienza telefonica strutturata l'uso solo occasionale del telefono.
-
-- "public_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli a contatto col pubblico,
-  usando la lingua del CV.
-- "phone_roles": fino a 5 stringhe brevi (max 4 parole) che riassumono ruoli telefonici strutturati,
-  usando la lingua del CV.
-
-- "has_basic_it_skills": true se sono presenti competenze informatiche da ufficio:
-  pacchetto Office (Word, Excel, PowerPoint, Outlook), Google Suite/Workspace (Docs, Sheets, Slides),
-  strumenti di videoconferenza (Meet, Zoom, Teams), posta elettronica, CRM o software gestionali/ticketing.
-  Queste competenze devono essere almeno di livello base (uso regolare di Word/Excel o strumenti equivalenti).
-
-- "it_skills": fino a 5 stringhe brevi che riassumono strumenti digitali rilevanti.
-
-- "profile_keywords": esattamente 4 stringhe brevi che rappresentano il profilo,
-  usando keyword o hashtag (es. "#CustomerService", "#Retail", "#OfficeSkills", "#CallCenterExperience").
-
-- "ai_summary": riassunto sintetico delle esperienze lavorative, in ITALIANO,
-  composto da ESATTAMENTE 4 RIGHE separate da "\\n".
-  Ogni riga massimo 120 caratteri, focalizzata su attività lavorative e contatto con clienti.
-
-- "suitability_label": valutazione complessiva di idoneità, deve essere
-  ESATTAMENTE una di queste stringhe:
-  - "Adatto"
-  - "Parzialmente adatto"
-  - "Non adatto"
-
-  Applica SEMPRE queste regole (con criterio molto rigoroso):
-
-  1) "Adatto" SOLO se:
-     - sono presenti competenze informatiche da ufficio (has_basic_it_skills = true),
-       intese come uso almeno base di Word/Excel/pacchetto Office o equivalenti,
-     E
-     - sono presenti esperienze telefoniche strutturate con clienti
-       (has_phone_contact = true: call center, contact center, telesales, telemarketing,
-        help desk telefonico, customer service telefonico, phone collections, ecc.).
-
-  2) "Non adatto" se NON ci sono competenze informatiche da ufficio
-     (has_basic_it_skills = false) E NON ci sono esperienze telefoniche strutturate
-     di call center/contact center/telemarketing/altre attività telefoniche con clienti
-     (has_phone_contact = false).
-
-  3) "Parzialmente adatto" se è presente SOLO UNA delle due variabili:
-     - competenze informatiche da ufficio
-     - oppure esperienze telefoniche strutturate
-     MA a condizione che nel CV esista comunque esperienza di contatto, supporto
-     o servizio al pubblico/cliente (has_public_contact = true).
-
-  4) In tutti gli altri casi, considera "Non adatto".
-
-- "ai_support": breve commento in ITALIANO (2-3 frasi) che spiega perché
-  hai scelto quel valore in "suitability_label", citando:
-  - presenza/assenza di esperienza telefonica strutturata,
-  - presenza/assenza di lavoro a contatto col pubblico,
-  - presenza/assenza di competenze informatiche da ufficio.
-
-Escludi da "public_roles" e "phone_roles" ruoli artistici/spettacolo (attore, attrice, figurante,
-ballerino, cantante, ecc.) e ruoli sanitari/pure assistenziali, a meno che non siano descritti
-esplicitamente come customer service in contesto business.
+Vincoli:
+- "experience" max 8 voci (più recenti o rilevanti).
+- "is_phone_structured"=true SOLO se segnali chiari: inbound/outbound, call center, campagne, dialer, script, KPI, presa appuntamenti, volumi.
+  Se è solo "contatti telefonici" generico/occasionale, lascialo false.
 """
 
+SCORE_SYS = """
+Sei un sistema di SCORING per ruoli telefonici basato SU JSON estratto (non usare info esterne).
+Produci SOLO JSON valido:
 
-def groq_full_analyze(text: str) -> dict:
-    empty = {
-        "name": "",
-        "surname": "",
-        "email": "",
-        "phones": [],
-        "has_public_contact": False,
-        "has_phone_contact": False,
-        "public_roles": [],
-        "phone_roles": [],
-        "has_basic_it_skills": False,
-        "it_skills": [],
-        "profile_keywords": [],
-        "ai_summary": "",
-        "suitability_label": "",
-        "ai_support": "",
+{
+  "schema_version": "2.0",
+  "scores": {
+    "inbound_call_center": {
+      "score": 0,
+      "label": "Alta|Media|Bassa",
+      "dimensions": {
+        "customer_orientation": 0,
+        "process_discipline": 0,
+        "stress_kpi_environment": 0,
+        "digital_fluency": 0,
+        "communication_clarity": 0
+      },
+      "reasons": [],
+      "evidence": []
+    },
+    "outbound_telemarketing": {
+      "score": 0,
+      "label": "Alta|Media|Bassa",
+      "dimensions": {
+        "sales_drive": 0,
+        "objection_handling": 0,
+        "kpi_results": 0,
+        "process_discipline": 0,
+        "digital_fluency": 0
+      },
+      "reasons": [],
+      "evidence": []
+    },
+    "appointment_setting": {
+      "score": 0,
+      "label": "Alta|Media|Bassa",
+      "dimensions": {
+        "lead_qualification": 0,
+        "script_process": 0,
+        "kpi_volumes": 0,
+        "crm_usage": 0,
+        "communication_clarity": 0
+      },
+      "reasons": [],
+      "evidence": []
     }
-    if not text or not text.strip():
+  }
+}
+
+Regole:
+- Ogni dimensione è 0-5 (intero).
+- Score 0-100 deriva da media pesata delle dimensioni.
+- Label: Alta >=75; Media 45-74; Bassa <=44.
+- reasons max 3 frasi brevi in italiano.
+- evidence max 3 estratti, scelti SOLO tra evidenze già presenti nel JSON estratto.
+"""
+
+def groq_extract(cv_text: str, read_conf: float, read_reason: str) -> Dict[str, Any]:
+    empty = {
+        "schema_version": "2.0",
+        "candidate": {"name": "", "surname": "", "email": "", "phones": []},
+        "extraction": {"language_hint": "auto", "confidence": 0.0, "notes": ""},
+        "experience": [],
+        "skills": {
+            "office_tools": [], "crm_tools": [], "ticketing_tools": [],
+            "contact_center_tools": [], "languages": [], "other": []
+        },
+        "constraints": []
+    }
+    if not cv_text or not cv_text.strip() or groq_client is None:
         return empty
+
+    snippet = cv_text[:16000]
+    lang_hint = detect_language_hint(cv_text)
+
+    user_payload = {
+        "text": snippet,
+        "reading": {"method_confidence": read_conf, "method_reason": read_reason, "language_hint": lang_hint},
+    }
+
+    try:
+        resp = groq_client.chat.completions.create(
+            model=GROQ_MODEL_EXTRACT,
+            messages=[
+                {"role": "system", "content": EXTRACT_SYS},
+                {"role": "user", "content": "Estrai i dati dal CV (testo + meta-lettura):\n" + json.dumps(user_payload, ensure_ascii=False)},
+            ],
+            temperature=0.05,
+            max_tokens=1400,
+        )
+        content = (resp.choices[0].message.content or "").strip()
+        data = safe_json_loads_maybe(content) or {}
+    except Exception:
+        data = {}
+
+    out = empty
+    if isinstance(data, dict):
+        out["schema_version"] = str(data.get("schema_version", "2.0"))
+        out["candidate"] = data.get("candidate", out["candidate"]) if isinstance(data.get("candidate"), dict) else out["candidate"]
+        out["extraction"] = data.get("extraction", out["extraction"]) if isinstance(data.get("extraction"), dict) else out["extraction"]
+        out["experience"] = data.get("experience", out["experience"]) if isinstance(data.get("experience"), list) else out["experience"]
+        out["skills"] = data.get("skills", out["skills"]) if isinstance(data.get("skills"), dict) else out["skills"]
+        out["constraints"] = data.get("constraints", out["constraints"]) if isinstance(data.get("constraints"), list) else out["constraints"]
+
+    if isinstance(out["experience"], list) and len(out["experience"]) > 8:
+        out["experience"] = out["experience"][:8]
+
+    try:
+        c = float(out["extraction"].get("confidence", 0.0))
+        out["extraction"]["confidence"] = max(0.0, min(1.0, c))
+    except Exception:
+        out["extraction"]["confidence"] = 0.0
+
+    return out
+
+def groq_score(extracted: Dict[str, Any]) -> Dict[str, Any]:
+    empty = {
+        "schema_version": "2.0",
+        "scores": {
+            "inbound_call_center": {"score": 0, "label": "Bassa", "dimensions": {}, "reasons": [], "evidence": []},
+            "outbound_telemarketing": {"score": 0, "label": "Bassa", "dimensions": {}, "reasons": [], "evidence": []},
+            "appointment_setting": {"score": 0, "label": "Bassa", "dimensions": {}, "reasons": [], "evidence": []},
+        },
+    }
     if groq_client is None:
         return empty
     try:
-        snippet = text[:12000]
-        chat_completion = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
+        resp = groq_client.chat.completions.create(
+            model=GROQ_MODEL_SCORE,
             messages=[
-                {"role": "system", "content": FULL_SYS},
-                {
-                    "role": "user",
-                    "content": (
-                        "Analizza il seguente CV e compila TUTTI i campi del JSON richiesto:\n"
-                        f"\"\"\"{snippet}\"\"\""
-                    ),
-                },
+                {"role": "system", "content": SCORE_SYS},
+                {"role": "user", "content": "Esegui scoring usando SOLO questo JSON estratto:\n" + json.dumps(extracted, ensure_ascii=False)},
             ],
-            temperature=0.1,
-            max_tokens=800,
+            temperature=0.05,
+            max_tokens=900,
         )
-        content = (chat_completion.choices[0].message.content or "").strip()
-        start = content.find("{")
-        end = content.rfind("}")
-        if start == -1 or end == -1 or end <= start:
+        content = (resp.choices[0].message.content or "").strip()
+        data = safe_json_loads_maybe(content) or {}
+        if not isinstance(data, dict) or "scores" not in data:
             return empty
-        js = content[start:end + 1]
-        data = json.loads(js)
+        return data
     except Exception:
         return empty
-    for k in empty.keys():
-        data.setdefault(k, empty[k])
-    return data
 
+# ===================== FALLBACK/ENRICH (deterministico) =====================
+def deterministic_enrich(extracted: Dict[str, Any], raw_text: str, email_fallback: str, phones_fallback: List[str]) -> Dict[str, Any]:
+    out = extracted if isinstance(extracted, dict) else {}
 
-# ===================== NORMALIZZAZIONE TERMINOLOGIA KEYWORDS =====================
-def normalize_role_label(role: str, kind: str):
-    low = (role or "").strip().lower()
-    if not low:
-        return None
-    if any(w in low for w in ["figurante", "attore", "attrice", "teatro", "teatrale",
-                              "dancer", "ballerino", "ballerina", "cantante", "actor", "actress"]):
-        return None
-    if "nutrice" in low:
-        return "Caregiver"
-    if kind == "phone":
-        if "call center" in low or "contact center" in low:
-            return "Call Center Agent"
-        if "telesales" in low or "telemarketing" in low:
-            return "Telesales Agent"
-        if "help desk" in low or "service desk" in low:
-            return "Help Desk Agent"
-        if ("customer service" in low or "customer care" in low or
-                "servizio clienti" in low or "assistenza clienti" in low):
-            return "Customer Service Agent"
-        if ("phone" in low or "telefonic" in low or "telefonico" in low or
-                "telefonica" in low or "telefoniche" in low):
-            return "Phone Support"
-    if "assistant store manager" in low:
-        return "Assistant Store Manager"
-    if "store manager" in low:
-        return "Store Manager"
-    if "sales consultant" in low or "sales advisor" in low:
-        return "Sales Consultant"
-    if ("sales assistant" in low or "shop assistant" in low or "store assistant" in low or
-            "sales associate" in low or "retail sales" in low or
-            "addetto vendite" in low or "addetta vendite" in low or "commess" in low):
-        return "Sales Assistant"
-    if ("customer service" in low or "customer care" in low or
-            "servizio clienti" in low or "assistenza clienti" in low):
-        return "Customer Service"
-    if ("receptionist" in low or "reception" in low or
-            "front desk" in low or "front office" in low):
-        return "Receptionist"
-    if "cameriere" in low or "cameriera" in low or "waiter" in low or "waitress" in low:
-        return "Waiter"
-    if "banconier" in low or "banconist" in low or ("counter" in low and ("bar" in low or "shop" in low or "store" in low)):
-        return "Counter Assistant"
-    if "barista" in low or "barman" in low or "bartender" in low or "barmaid" in low:
-        return "Bartender"
-    if "cashier" in low or "cassiere" in low or "cassiera" in low:
-        return "Cashier"
-    if ("promoter" in low or "brand ambassador" in low or
-            "hostess" in low or "steward" in low or "promozione" in low):
-        return "Promoter"
-    if "tour guide" in low or "guida turistica" in low:
-        return "Tour Guide"
-    if "concierge" in low:
-        return "Concierge"
-    if "beauty consultant" in low or "beauty advisor" in low or "consulente di bellezza" in low:
-        return "Beauty Consultant"
-    if "guest relation" in low or "guest relations" in low or "guest service" in low:
-        return "Guest Relations"
-    if kind == "phone":
-        return "Customer Service Agent"
-    if kind == "public":
-        return "Customer-facing Role"
-    return None
+    cand = out.get("candidate", {}) if isinstance(out.get("candidate"), dict) else {}
+    if not cand.get("email"):
+        cand["email"] = email_fallback
 
-
-def build_keywords_string(raw: str, screen_info: dict) -> str:
-    labels = []
-    for r in screen_info.get("phone_roles", []):
-        lab = normalize_role_label(str(r), "phone")
-        if not lab:
-            continue
-        if lab not in labels:
-            labels.append(lab)
-        if len(labels) >= 5:
-            break
-    if len(labels) < 5:
-        for r in screen_info.get("public_roles", []):
-            lab = normalize_role_label(str(r), "public")
-            if not lab:
-                continue
-            if lab not in labels:
-                labels.append(lab)
-            if len(labels) >= 5:
-                break
-    if not labels:
-        text_low = raw.lower()
-        patterns = [
-            ("Call Center Agent", ["call center", "contact center"]),
-            ("Telesales Agent", ["telesales", "telemarketing"]),
-            ("Customer Service Agent", ["customer service", "customer care", "servizio clienti", "assistenza clienti"]),
-            ("Sales Assistant", ["sales assistant", "shop assistant", "store assistant",
-                                 "sales associate", "addetto vendite", "addetta vendite", "commess"]),
-            ("Sales Consultant", ["sales consultant", "sales advisor", "consulente alle vendite", "consulente di vendita"]),
-            ("Assistant Store Manager", ["assistant store manager"]),
-            ("Store Manager", ["store manager"]),
-            ("Waiter", ["cameriere", "cameriera", "waiter", "waitress"]),
-            ("Bartender", ["barista", "barman", "bartender", "barmaid"]),
-            ("Cashier", ["cashier", "cassiere", "cassiera"]),
-            ("Receptionist", ["receptionist", "front desk", "front office", "reception"]),
-            ("Promoter", ["promoter", "brand ambassador", "hostess", "steward"]),
-        ]
-        for name, pats in patterns:
-            if any(p in text_low for p in pats):
-                if name not in labels:
-                    labels.append(name)
-                if len(labels) >= 5:
-                    break
-    return ", ".join(labels) if labels else "-"
-
-
-def classify_label(text: str, screen_info: dict) -> str:
-    """
-    Regole rigide:
-    - Adatto: competenze IT base (office/word/excel o simili) + esperienza telefonica strutturata.
-    - Parzialmente adatto: solo una delle due (IT o telefono) ma con contatto col pubblico/cliente.
-    - Non adatto: tutti gli altri casi.
-    """
-    has_phone = bool(screen_info.get("has_phone_contact"))
-    has_public = bool(screen_info.get("has_public_contact"))
-    has_it = bool(screen_info.get("has_basic_it_skills"))
-
-    # fallback su testo se i flag AI sono vuoti o troppo conservativi
-    if not has_phone:
-        has_phone = text_has_phone(text)
-    if not has_public:
-        has_public = text_has_public(text)
-    if not has_it:
-        has_it = text_has_basic_it(text)
-
-    cs_like = text_has_phone(text) or text_has_public(text)
-
-    # criteri rigidi
-    if has_it and has_phone:
-        return "Adatto"
-    if (has_it or has_phone) and (has_public or cs_like):
-        return "Parzialmente adatto"
-    return "Non adatto"
-
-
-def label_to_score(label: str) -> int:
-    if label == "Adatto":
-        return 100
-    if label == "Parzialmente adatto":
-        return 50
-    return 0
-
-
-def normalize(ai: dict, raw: str, fname: str) -> dict:
-    email_ai = (ai.get("email") or "").strip()
-    email = email_ai or extract_email(raw)
-
-    phones_ai_raw = ai.get("phones") or []
-    phones_ai_clean = []
-    iterable = phones_ai_raw if isinstance(phones_ai_raw, list) else [phones_ai_raw]
-    for item in iterable:
-        if isinstance(item, (dict, list)):
-            continue
-        s = str(item).strip()
-        if s:
-            phones_ai_clean.append(s)
-    phones_regex = extract_phones(raw)
-    all_phones, seen = [], set()
-    for p in phones_ai_clean + phones_regex:
+    phones_ai = cand.get("phones", [])
+    if not isinstance(phones_ai, list):
+        phones_ai = []
+    merged = []
+    seen = set()
+    for p in phones_ai + phones_fallback:
         s = str(p).strip()
         if not s:
             continue
         if s not in seen:
             seen.add(s)
-            all_phones.append(s)
+            merged.append(s)
+    cand["phones"] = merged
+    out["candidate"] = cand
 
-    fullname = resolve_name(ai.get("name", ""), ai.get("surname", ""), raw, email)
+    skills = out.get("skills", {}) if isinstance(out.get("skills"), dict) else {}
+    txt = raw_text or ""
+    low = txt.lower()
 
-    screen_info = {
-        "has_public_contact": bool(ai.get("has_public_contact")),
-        "has_phone_contact": bool(ai.get("has_phone_contact")),
-        "public_roles": ai.get("public_roles") or [],
-        "phone_roles": ai.get("phone_roles") or [],
-        "has_basic_it_skills": bool(ai.get("has_basic_it_skills")),
-        "it_skills": ai.get("it_skills") or [],
-    }
+    def fill_if_empty(field: str, kw_list: List[str]):
+        arr = skills.get(field, [])
+        if not isinstance(arr, list):
+            arr = []
+        if arr:
+            return
+        hits = []
+        for k in kw_list:
+            if k.lower() in low:
+                hits.append(k)
+        skills[field] = list(dict.fromkeys(hits))[:8] if hits else []
 
-    pk_raw = ai.get("profile_keywords") or []
-    if isinstance(pk_raw, list):
-        pk_clean = [str(x).strip() for x in pk_raw if str(x).strip()]
-    else:
-        pk_clean = [str(pk_raw).strip()] if str(pk_raw).strip() else []
-    if pk_clean:
-        keywords_str = ", ".join(pk_clean[:4])
-    else:
-        keywords_str = build_keywords_string(raw, screen_info)
+    fill_if_empty("office_tools", OFFICE_KW)
+    fill_if_empty("crm_tools", CRM_KW)
+    fill_if_empty("ticketing_tools", TICKETING_KW)
+    fill_if_empty("contact_center_tools", CC_TOOLS_KW)
+    out["skills"] = skills
 
-    label = classify_label(raw, screen_info)
-    score = label_to_score(label)
+    exp = out.get("experience", [])
+    if not isinstance(exp, list):
+        exp = []
+    for e in exp:
+        if not isinstance(e, dict):
+            continue
+        ev = e.get("evidence", [])
+        if not isinstance(ev, list):
+            ev = []
 
-    ai_summary_text = (ai.get("ai_summary") or "").strip()
-    if ai_summary_text:
-        lines = [l.strip() for l in ai_summary_text.splitlines() if l.strip()]
-        ai_summary_text = "\n".join(lines[:4])
+        desc = (e.get("description") or "")
+        block = (str(e.get("role", "")) + " " + str(desc)).lower()
+        is_struct = bool(e.get("is_phone_structured", False))
 
-    ai_support_text = (ai.get("ai_support") or "").strip()
-    ai_support_text = re.sub(r"\s+", " ", ai_support_text)
+        if not is_struct:
+            strong = any(k in block for k in ["call center", "contact center", "telemarketing", "telesales", "dialer", "cold calling"])
+            strong = strong or (any(k in block for k in OUTBOUND_KW) and any(k in block for k in ["kpi", "target", "obiettiv", "conversion", "appunt"]))
+            if strong:
+                e["is_phone_structured"] = True
+                if any(k in block for k in OUTBOUND_KW) and any(k in block for k in INBOUND_KW):
+                    e["phone_type"] = "mixed"
+                elif any(k in block for k in OUTBOUND_KW):
+                    e["phone_type"] = "outbound"
+                elif any(k in block for k in INBOUND_KW):
+                    e["phone_type"] = "inbound"
+                else:
+                    e["phone_type"] = "mixed"
+                if not ev:
+                    ev = find_snippets(
+                        txt,
+                        ["call center", "contact center", "telemarketing", "telesales", "chiamate in uscita", "chiamate in entrata", "presa appuntamenti", "dialer", "kpi", "target"],
+                        2,
+                    )
 
-    return {
-        "Nome file": fname,
-        "Nome e Cognome": fullname,
-        "Valutazione di adeguatezza": score,
-        "Classe adeguatezza": label,
-        "Keywords": keywords_str,
-        "AI Assisted": ai_summary_text,
-        "AI Screening": ai_support_text,
-        "E-Mail": email,
-        "Numero/Numeri telefono": " | ".join(all_phones),
-    }
+        if not ev:
+            ev2 = find_snippets(txt, ["crm", "salesforce", "hubspot", "zendesk", "kpi", "target", "appuntamenti"], 1)
+            ev = ev2
 
+        e["evidence"] = ev[:3]
+    out["experience"] = exp
+
+    ex = out.get("extraction", {}) if isinstance(out.get("extraction"), dict) else {}
+    try:
+        c = float(ex.get("confidence", 0.0))
+    except Exception:
+        c = 0.0
+    ex["confidence"] = max(0.0, min(1.0, c))
+    out["extraction"] = ex
+    return out
 
 # ===================== CONVERSIONE A PDF + DATA URI =====================
 def to_pdf_bytes(original_bytes: bytes, ext: str) -> bytes:
@@ -1047,25 +759,11 @@ def to_pdf_bytes(original_bytes: bytes, ext: str) -> bytes:
             return original_bytes
     return original_bytes
 
-
 def build_pdf_data_uri(filename: str, original_bytes: bytes) -> str:
     ext = filename.split(".")[-1].lower()
     pdf_bytes = to_pdf_bytes(original_bytes, ext)
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     return f"data:application/pdf;base64,{b64}"
-
-
-# ===================== STATO AVVISO NON LETTURA =====================
-if "hide_unreadable_info" not in st.session_state:
-    st.session_state["hide_unreadable_info"] = False
-
-# ===================== UPLOADER =====================
-uploaded_files = st.file_uploader(
-    "Import CV",
-    accept_multiple_files=True,
-    type=["pdf", "doc", "docx", "odt", "txt", "rtf"],
-    label_visibility="collapsed"
-)
 
 # ===================== MESSAGGI STANDARD =====================
 standard_message = (
@@ -1074,151 +772,287 @@ standard_message = (
     "Quando preferisci essere contattato?\n"
     "Grazie e buona giornata"
 )
-
 email_subject = "Selezione per attività operatore telefonico"
 
-# ===================== AVVISO MANCANZA API KEY =====================
-if uploaded_files and groq_client is None:
-    st.error(
-        "GROQ_API_KEY non impostata nei secrets/variabili d'ambiente. "
-        "Imposta la chiave Groq e riavvia l'app."
-    )
+# ===================== UI UPLOADER =====================
+uploaded_files = st.file_uploader(
+    "Import CV",
+    accept_multiple_files=True,
+    type=["pdf", "docx", "txt", "doc", "odt", "rtf"],
+    label_visibility="collapsed",
+)
 
-# ===================== ANALISI AUTOMATICA =====================
+if uploaded_files and groq_client is None:
+    st.error("GROQ_API_KEY non impostata. Imposta la chiave Groq e riavvia l'app.")
+
+# ===================== ANALISI =====================
 if uploaded_files and groq_client is not None:
     status_box = st.empty()
     status_box.info("Analisi in corso sui CV caricati...")
 
     rows = []
-    unreadable_files = []
+    unreadable = []
 
     for f in uploaded_files:
         original_bytes = f.getvalue()
-        text_cv = extract_text(f, original_bytes)
+        raw_text, read_conf, read_reason = extract_text(f, original_bytes)
 
-        if not text_cv or not text_cv.strip():
-            unreadable_files.append(f.name)
+        if not raw_text or not raw_text.strip():
+            unreadable.append(f"{f.name} ({read_reason})")
             continue
 
-        ai_full = groq_full_analyze(text_cv)
-        base_row = normalize(ai_full, text_cv, f.name)
+        email_fb = extract_email(raw_text)
+        phones_fb = extract_phones(raw_text, prefer_cc39_if_missing=default_cc)
+
+        extracted = groq_extract(raw_text, read_conf, read_reason)
+        extracted = deterministic_enrich(extracted, raw_text, email_fb, phones_fb)
+
+        cand = extracted.get("candidate", {}) if isinstance(extracted.get("candidate"), dict) else {}
+        fullname = resolve_fullname(cand.get("name", ""), cand.get("surname", ""), raw_text, cand.get("email", ""))
+
+        llm_conf = 0.0
+        try:
+            llm_conf = float(extracted.get("extraction", {}).get("confidence", 0.0))
+        except Exception:
+            llm_conf = 0.0
+        extraction_confidence = max(0.0, min(1.0, 0.55 * read_conf + 0.45 * llm_conf))
+
+        scored = groq_score(extracted)
+
+        scores = scored.get("scores", {}) if isinstance(scored.get("scores"), dict) else {}
+        inbound = scores.get("inbound_call_center", {}) if isinstance(scores.get("inbound_call_center"), dict) else {}
+        outbound = scores.get("outbound_telemarketing", {}) if isinstance(scores.get("outbound_telemarketing"), dict) else {}
+        appoint = scores.get("appointment_setting", {}) if isinstance(scores.get("appointment_setting"), dict) else {}
+
+        def pick_score(d: dict) -> Tuple[int, str, str, str]:
+            sc = int(d.get("score", 0) or 0)
+            lab = str(d.get("label", "Bassa") or "Bassa")
+            reasons = d.get("reasons", [])
+            if not isinstance(reasons, list):
+                reasons = []
+            evid = d.get("evidence", [])
+            if not isinstance(evid, list):
+                evid = []
+            return sc, lab, " • ".join([str(x) for x in reasons[:3]]), "\n".join([str(x) for x in evid[:3]])
+
+        sc_in, lab_in, rs_in, ev_in = pick_score(inbound)
+        sc_out, lab_out, rs_out, ev_out = pick_score(outbound)
+        sc_ap, lab_ap, rs_ap, ev_ap = pick_score(appoint)
+
+        skills = extracted.get("skills", {}) if isinstance(extracted.get("skills"), dict) else {}
+        office_tools = skills.get("office_tools", [])
+        crm_tools = skills.get("crm_tools", [])
+        ticket_tools = skills.get("ticketing_tools", [])
+        cc_tools = skills.get("contact_center_tools", [])
+
+        def short_list(x, n=6):
+            if not isinstance(x, list):
+                return ""
+            y = [str(i).strip() for i in x if str(i).strip()]
+            return ", ".join(list(dict.fromkeys(y))[:n])
+
+        tools_str = " | ".join(
+            [s for s in [short_list(office_tools, 4), short_list(crm_tools, 4), short_list(ticket_tools, 3), short_list(cc_tools, 3)] if s]
+        )
+
+        exp = extracted.get("experience", [])
+        phone_struct = 0
+        phone_types = []
+        evid_phone = []
+        if isinstance(exp, list):
+            for e in exp:
+                if not isinstance(e, dict):
+                    continue
+                if bool(e.get("is_phone_structured", False)):
+                    phone_struct += 1
+                    pt = str(e.get("phone_type", "none"))
+                    if pt and pt not in phone_types:
+                        phone_types.append(pt)
+                    ev = e.get("evidence", [])
+                    if isinstance(ev, list):
+                        for s in ev[:1]:
+                            if s and s not in evid_phone:
+                                evid_phone.append(str(s))
+        phone_type_str = ", ".join(phone_types) if phone_types else "none"
+        evid_phone_str = "\n".join(evid_phone[:3])
 
         pdf_data_uri = build_pdf_data_uri(f.name, original_bytes)
 
-        label = base_row["Classe adeguatezza"]
-        whatsapp_url = ""
-        if label in ("Adatto", "Parzialmente adatto"):
-            phones_str = base_row.get("Numero/Numeri telefono", "")
-            first_phone = phones_str.split(" | ")[0].strip() if phones_str else ""
-            if first_phone:
-                phone_digits = re.sub(r"[^\d]", "", first_phone)
-                if phone_digits:
-                    encoded_text = quote(standard_message)
-                    whatsapp_url = f"https://api.whatsapp.com/send?phone={phone_digits}&text={encoded_text}"
+        best_score = max(sc_in, sc_out, sc_ap)
+        label_best = "Alta" if best_score >= 75 else "Media" if best_score >= 45 else "Bassa"
 
-        base_row["Read"] = pdf_data_uri
-        base_row["Whatsapp"] = whatsapp_url
-        rows.append(base_row)
+        whatsapp_url = ""
+        phones = cand.get("phones", [])
+        first_phone = ""
+        if isinstance(phones, list) and phones:
+            first_phone = str(phones[0]).strip()
+        if label_best in ("Alta", "Media") and first_phone:
+            phone_digits = re.sub(r"[^\d]", "", first_phone)
+            if phone_digits:
+                encoded_text = quote(standard_message)
+                whatsapp_url = f"https://api.whatsapp.com/send?phone={phone_digits}&text={encoded_text}"
+
+        email = cand.get("email", "") or email_fb
+        mailto = ""
+        if isinstance(email, str) and email.strip():
+            subject_enc = quote_plus(email_subject)
+            body_enc = quote(standard_message)
+            mailto = f"mailto:{email}?subject={subject_enc}&body={body_enc}"
+
+        row = {
+            "Nome file": f.name,
+            "Nome e Cognome": fullname,
+            "Confidence estrazione": round(extraction_confidence, 2),
+            "Metodo lettura": read_reason,
+            "Tools/Stack": tools_str if tools_str else "-",
+            "Phone structured (#exp)": phone_struct,
+            "Phone type": phone_type_str,
+            "Evidenze phone": evid_phone_str,
+            "Inbound score": sc_in,
+            "Inbound label": lab_in,
+            "Inbound reasons": rs_in,
+            "Inbound evidence": ev_in,
+            "Outbound score": sc_out,
+            "Outbound label": lab_out,
+            "Outbound reasons": rs_out,
+            "Outbound evidence": ev_out,
+            "Appoint score": sc_ap,
+            "Appoint label": lab_ap,
+            "Appoint reasons": rs_ap,
+            "Appoint evidence": ev_ap,
+            "Best score": best_score,
+            "Best label": label_best,
+            "Read": pdf_data_uri,
+            "Numero/Numeri telefono": " | ".join([str(p) for p in phones]) if isinstance(phones, list) else "",
+            "Whatsapp": whatsapp_url,
+            "E-Mail": mailto,
+        }
+
+        if show_debug:
+            row["_debug_extract_json"] = json.dumps(extracted, ensure_ascii=False)
+            row["_debug_score_json"] = json.dumps(scored, ensure_ascii=False)
+
+        if extraction_confidence >= min_extract_conf:
+            rows.append(row)
 
     status_box.empty()
     st.success("Analisi completata.")
 
-    if unreadable_files and not st.session_state["hide_unreadable_info"]:
-        with st.container():
-            st.markdown(
-                """
-                <div style="border:1px solid #ff4b4b;padding:12px;border-radius:8px;background:rgba(80,0,0,0.4);">
-                  <div style="color:#ffdddd;font-size:12px;margin-bottom:6px;">
-                    Attenzione: alcuni CV non sono stati letti correttamente
-                    (PDF solo immagini o formati non supportati) e non sono stati analizzati.
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.write(", ".join(unreadable_files))
-            if st.button("OK", key="close_unreadable_info"):
-                st.session_state["hide_unreadable_info"] = True
+    if unreadable:
+        st.warning("Alcuni CV non sono stati letti correttamente e non sono stati analizzati.")
+        st.write(", ".join(unreadable))
 
     if rows:
         df = pd.DataFrame(rows)
 
-        if "E-Mail" in df.columns:
-            def make_mailto(x: str) -> str:
-                if isinstance(x, str) and x.strip():
-                    subject_enc = quote_plus(email_subject)
-                    body_enc = quote(standard_message)
-                    return (
-                        f"mailto:{x}"
-                        f"?subject={subject_enc}"
-                        f"&body={body_enc}"
-                    )
-                return ""
-            df["E-Mail"] = df["E-Mail"].apply(make_mailto)
+        # ======= FILTRI UI =======
+        st.markdown("### Risultati")
+        c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
+        with c1:
+            role_filter = st.selectbox(
+                "Vista ruolo",
+                ["Best", "Inbound", "Outbound", "Appoint"],
+                index=0,
+                help=(
+                    "Best=mostra il punteggio migliore. "
+                    "Inbound=assistenza. Outbound=telemarketing/vendita. Appoint=presa appuntamenti."
+                ),
+            )
+        with c2:
+            min_score = st.slider("Score minimo", 0, 100, 0, 5)
+        with c3:
+            label_filter = st.multiselect("Label", ["Alta", "Media", "Bassa"], default=["Alta", "Media", "Bassa"])
+        with c4:
+            name_query = st.text_input("Cerca (nome/file)", value="")
 
-        desired_cols = [
+        role_help = {
+            "Best": "Mostra il punteggio migliore tra Inbound/Outbound/Appuntamenti.",
+            "Inbound": "Assistenza (in entrata). Pesa customer orientation + processi + digital.",
+            "Outbound": "Chiamate in uscita. Pesa vendita + KPI + obiezioni + processi.",
+            "Appoint": "Presa appuntamenti/qualifica lead. Pesa CRM + volumi + script/processo + comunicazione.",
+        }
+        st.caption(f"**Criteri vista {role_filter}:** {role_help.get(role_filter, '')}")
+
+        def role_cols(role: str) -> Tuple[str, str, str, str]:
+            if role == "Inbound":
+                return "Inbound score", "Inbound label", "Inbound reasons", "Inbound evidence"
+            if role == "Outbound":
+                return "Outbound score", "Outbound label", "Outbound reasons", "Outbound evidence"
+            if role == "Appoint":
+                return "Appoint score", "Appoint label", "Appoint reasons", "Appoint evidence"
+            return "Best score", "Best label", "Inbound reasons", "Inbound evidence"
+
+        score_col, label_col, reasons_col, evidence_col = role_cols(role_filter)
+
+        view = df.copy()
+        view = view[view[label_col].isin(label_filter)]
+        view = view[view[score_col] >= min_score]
+
+        if name_query.strip():
+            q = name_query.strip().lower()
+            view = view[
+                view["Nome e Cognome"].fillna("").str.lower().str.contains(q)
+                | view["Nome file"].fillna("").str.lower().str.contains(q)
+            ]
+
+        base_cols = [
             "Nome file",
             "Nome e Cognome",
-            "Valutazione di adeguatezza",
-            "Classe adeguatezza",
-            "Keywords",
-            "AI Assisted",
-            "AI Screening",
+            "Confidence estrazione",
+            "Metodo lettura",
+            "Tools/Stack",
+            "Phone structured (#exp)",
+            "Phone type",
+            "Evidenze phone",
+            score_col,
+            label_col,
+            reasons_col,
+            evidence_col,
             "Read",
             "Numero/Numeri telefono",
             "Whatsapp",
             "E-Mail",
         ]
-        df = df[[c for c in desired_cols if c in df.columns]]
+        base_cols = [c for c in base_cols if c in view.columns]
+        view = view[base_cols].sort_values(by=score_col, ascending=False)
 
-        n_rows = len(df)
-        header_h = 40
-        row_h = 32
-        padding = 24
-        table_height = min(600, header_h + n_rows * row_h + padding)
+        st.download_button(
+            "Export CSV (vista corrente)",
+            data=view.to_csv(index=False).encode("utf-8"),
+            file_name="screening_export.csv",
+            mime="text/csv",
+        )
+
+        n_rows = len(view)
+        table_height = min(760, 44 + n_rows * 32)
 
         st.data_editor(
-            df,
+            view,
             hide_index=True,
             use_container_width=True,
             height=table_height,
             num_rows="fixed",
-            disabled=True,  # tabella sola lettura, tap apre il link
+            disabled=True,
             column_config={
-                "Valutazione di adeguatezza": st.column_config.ProgressColumn(
-                    "Valutazione (%)",
-                    min_value=0,
-                    max_value=100,
-                    format="%d%%",
-                    help="0 = Non adatto, 50 = Parzialmente, 100 = Adatto",
-                ),
-                "Read": st.column_config.LinkColumn(
-                    "PDF",
-                    display_text="PDF",
-                    help="Apri il curriculum in formato PDF"
-                ),
-                "Whatsapp": st.column_config.LinkColumn(
-                    "WhatsApp",
-                    display_text="WhatsApp",
-                    help="Invia un messaggio WhatsApp precompilato"
-                ),
-                "E-Mail": st.column_config.LinkColumn(
-                    "E-mail",
-                    display_text="E-mail",
-                    help="Invia una e-mail precompilata"
-                ),
+                score_col: st.column_config.ProgressColumn(score_col, min_value=0, max_value=100, format="%d"),
+                "Read": st.column_config.LinkColumn("PDF", display_text="PDF"),
+                "Whatsapp": st.column_config.LinkColumn("WhatsApp", display_text="WhatsApp"),
+                "E-Mail": st.column_config.LinkColumn("E-mail", display_text="E-mail"),
             },
         )
+    else:
+        st.info("Nessun CV supera la soglia di Confidence estrazione selezionata.")
 
 # ===================== FOOTER =====================
 st.markdown(
-    '''
-    <div class="footer">
-        Tool developed by Fabio Galli using Vibe Coding, powered by Groq LLM API.
-    </div>
-    ''',
-    unsafe_allow_html=True
+    """
+<div class="footer">
+    Tool developed by Fabio Galli using Vibe Coding, powered by Groq LLM API. • v2
+</div>
+""",
+    unsafe_allow_html=True,
 )
+
 
 
 
